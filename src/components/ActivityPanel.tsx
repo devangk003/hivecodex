@@ -74,17 +74,6 @@ export const ActivityPanel = () => {
           ))}
         </div>
       </div>
-      
-      {/* File Upload Area */}
-      <div className="absolute bottom-20 left-4 right-4">
-        <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 border-2 border-border rounded-lg flex items-center justify-center">
-            <div className="w-8 h-8 bg-muted rounded"></div>
-          </div>
-          <p className="text-sm text-foreground font-medium mb-1">Drag and Drop Files to</p>
-          <p className="text-sm text-foreground font-medium">Upload in Room</p>
-        </div>
-      </div>
     </div>
   );
 };

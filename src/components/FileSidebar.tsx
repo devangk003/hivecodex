@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, File, FileText, Folder, FolderOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, File, FileText, Folder, FolderOpen, Mic, MicOff, Headphones, Settings, Upload } from 'lucide-react';
 import { useState } from 'react';
 
 interface FileItem {
@@ -80,16 +80,73 @@ const FileTreeItem = ({ item, depth = 0 }: { item: FileItem; depth?: number }) =
 };
 
 export const FileSidebar = () => {
+  const [isMuted, setIsMuted] = useState(false);
+  const [isDeafened, setIsDeafened] = useState(false);
+
   return (
-    <div className="w-64 bg-discord-sidebar border-r border-border h-screen overflow-y-auto">
+    <div className="w-64 bg-discord-sidebar border-r border-border h-screen flex flex-col">
       <div className="p-4 border-b border-border">
         <h2 className="text-sm font-semibold text-foreground">EXPLORER</h2>
       </div>
       
-      <div className="p-2">
+      <div className="flex-1 p-2 overflow-y-auto">
         {files.map((item, index) => (
           <FileTreeItem key={index} item={item} />
         ))}
+        
+        {/* Drag and Drop Area */}
+        <div className="mt-4 border-2 border-dashed border-border rounded-lg p-4 text-center">
+          <div className="w-12 h-12 mx-auto mb-2 border-2 border-border rounded-lg flex items-center justify-center">
+            <Upload className="w-6 h-6 text-muted-foreground" />
+          </div>
+          <p className="text-xs text-foreground font-medium mb-1">Drag and Drop Files to</p>
+          <p className="text-xs text-foreground font-medium">Upload in Room</p>
+        </div>
+      </div>
+      
+      {/* Audio/Video Controls */}
+      <div className="p-2 border-t border-border bg-discord-sidebar">
+        <div className="flex items-center gap-2 p-2 rounded hover:bg-discord-sidebar-hover transition-colors">
+          <div className="flex items-center gap-2 flex-1">
+            <img 
+              src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=32&h=32&fit=crop&crop=face" 
+              alt="Devang"
+              className="w-8 h-8 rounded-full"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-foreground truncate">Devang</div>
+              <div className="text-xs text-muted-foreground">#1001</div>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-1">
+            <button 
+              className={`p-1 rounded hover:bg-discord-sidebar-hover transition-colors ${
+                isMuted ? 'bg-red-500' : ''
+              }`}
+              onClick={() => setIsMuted(!isMuted)}
+            >
+              {isMuted ? (
+                <MicOff className="w-4 h-4 text-white" />
+              ) : (
+                <Mic className="w-4 h-4 text-muted-foreground" />
+              )}
+            </button>
+            
+            <button 
+              className={`p-1 rounded hover:bg-discord-sidebar-hover transition-colors ${
+                isDeafened ? 'bg-red-500' : ''
+              }`}
+              onClick={() => setIsDeafened(!isDeafened)}
+            >
+              <Headphones className={`w-4 h-4 ${isDeafened ? 'text-white' : 'text-muted-foreground'}`} />
+            </button>
+            
+            <button className="p-1 rounded hover:bg-discord-sidebar-hover transition-colors">
+              <Settings className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
