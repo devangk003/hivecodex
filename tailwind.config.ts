@@ -61,7 +61,15 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
-				}
+				},
+				'discord-sidebar': 'hsl(var(--sidebar-bg))',
+				'discord-sidebar-hover': 'hsl(var(--sidebar-hover))',
+				'discord-editor': 'hsl(var(--editor-bg))',
+				'discord-activity': 'hsl(var(--activity-bg))',
+				'discord-code': 'hsl(var(--code-bg))',
+				'status-online': 'hsl(var(--online-indicator))',
+				'status-idle': 'hsl(var(--idle-indicator))',
+				'status-offline': 'hsl(var(--offline-indicator))'
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
