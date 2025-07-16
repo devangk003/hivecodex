@@ -1,4 +1,4 @@
-import { Circle } from 'lucide-react';
+import { Circle, UserPlus } from 'lucide-react';
 
 interface User {
   name: string;
@@ -72,6 +72,14 @@ export const ActivityPanel = () => {
               </div>
             </div>
           ))}
+        </div>
+        
+        {/* Invite to Room Button */}
+        <div className="mt-6">
+          <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md transition-colors text-sm font-medium">
+            <UserPlus className="w-4 h-4" />
+            Invite to Room
+          </button>
         </div>
       </div>
     </div>
