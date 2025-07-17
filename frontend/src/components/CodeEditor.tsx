@@ -52,7 +52,7 @@ export const CodeEditor = () => {
       </div>
 
       {/* Code Content */}
-      <div className="flex-1 p-4 bg-discord-code font-mono text-sm overflow-auto">
+      <div className="flex-1 p-4 bg-discord-code font-mono text-sm overflow-auto custom-scrollbar">
         <div className="space-y-1">
           {codeContent.split('\n').map((line, index) => (
             <div key={index} className="flex">
