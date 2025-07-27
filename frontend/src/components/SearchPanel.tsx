@@ -1,8 +1,8 @@
-import React from 'react';
-import { Search, Filter, Replace } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import React from "react";
+import { Search, Filter, Replace } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface SearchPanelProps {
   isOpen: boolean;
@@ -43,7 +43,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ isOpen, roomId }) => {
               className="h-8 bg-discord-primary border-discord-border"
             />
           </div>
-          
+
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="h-7">
               <Search className="w-3 h-3 mr-1" />

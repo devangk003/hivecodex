@@ -1,51 +1,75 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, Smile, Plus, Hash, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { useAuth } from '@/contexts/AuthContext';
-import { Message, chatAPI } from '@/lib/api';
-import socketService from '@/lib/socket';
-import { toast } from 'sonner';
+import React, { useState, useEffect, useRef } from "react";
+import { Send, Smile, Plus, Hash, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { useAuth } from "@/contexts/AuthContext";
+import { Message, chatAPI, Reaction } from "@/lib/api";
+import socketService from "@/lib/socket";
+import { toast } from "sonner";
 
 interface ChatProps {
   roomId: string;
   onClose?: () => void;
 }
 
-export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
+const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [typingUsers, setTypingUsers] = useState<Array<{ userId: string; userName: string }>>([]);
+  const [reactingMessageId, setReactingMessageId] = useState<string | null>(
+    null,
+  );
+  const [newMessage, setNewMessage] = useState("");
+  const [typingUsers, setTypingUsers] = useState<
+    Array<{ userId: string; userName: string }>
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
+
+  // Handle add/remove reaction
+  const handleReaction = async (messageId: string, emoji: string) => {
+    if (!user) return;
+    const message = messages.find((m) => m.id === messageId);
+    if (!message) return;
+    const hasReacted = message.reactions?.some(
+      (r) => r.emoji === emoji && r.userId === user.id,
+    );
+    try {
+      let updatedReactions: Reaction[] = [];
+      if (hasReacted) {
+        const res = await chatAPI.removeReaction(messageId, emoji);
+        updatedReactions = res.reactions;
+      } else {
+        const res = await chatAPI.addReaction(messageId, emoji);
+        updatedReactions = res.reactions;
+      }
+      setMessages((msgs) =>
+        msgs.map((m) =>
+          m.id === messageId ? { ...m, reactions: updatedReactions } : m,
+        ),
+      );
+    } catch (err) {
+      toast.error("Failed to update reaction");
+    }
+  };
 
   // Load existing messages when component mounts
   useEffect(() => {
     const loadMessages = async () => {
       if (!roomId) return;
-      
       try {
         setIsLoading(true);
-        console.log('Chat - Loading existing messages for room:', roomId);
         const response = await chatAPI.getRoomMessages(roomId);
-        console.log('Chat - Loaded messages:', response);
-        
         if (response.messages && Array.isArray(response.messages)) {
           setMessages(response.messages);
-          console.log('Chat - Set messages:', response.messages);
         } else {
-          console.log('Chat - No messages found or invalid response format');
           setMessages([]);
         }
       } catch (error) {
-        console.error('Chat - Error loading messages:', error);
         setMessages([]);
       } finally {
         setIsLoading(false);
       }
     };
-
     loadMessages();
   }, [roomId]);
 
@@ -54,42 +78,30 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
     if (!roomId) return;
 
     const handleNewMessage = (message: Message) => {
-      console.log('Chat - Received message:', message);
-      console.log('Current user ID:', user?.id);
-      console.log('Message sender ID:', message.senderId);
-      
-      // Add all messages - both from self and others
-      // This ensures proper synchronization
-      setMessages(prev => {
-        // Check if message already exists to avoid duplicates
-        const messageExists = prev.some(m => m.id === message.id);
-        if (messageExists) {
-          console.log('Message already exists, skipping');
-          return prev;
-        }
-        
-        console.log('Adding message to chat');
+      setMessages((prev) => {
+        const messageExists = prev.some((m) => m.id === message.id);
+        if (messageExists) return prev;
         return [...prev, message];
       });
     };
 
-    const handleTyping = (data: { userId: string; userName: string; isTyping: boolean }) => {
-      console.log('Chat - Typing update:', data);
-      setTypingUsers(prev => {
+    const handleTyping = (data: {
+      userId: string;
+      userName: string;
+      isTyping: boolean;
+    }) => {
+      setTypingUsers((prev) => {
         if (data.isTyping) {
-          // Add user to typing list if not already there
-          if (!prev.some(u => u.userId === data.userId)) {
+          if (!prev.some((u) => u.userId === data.userId)) {
             return [...prev, { userId: data.userId, userName: data.userName }];
           }
         } else {
-          // Remove user from typing list
-          return prev.filter(u => u.userId !== data.userId);
+          return prev.filter((u) => u.userId !== data.userId);
         }
         return prev;
       });
     };
 
-    console.log('Chat - Setting up socket listeners for room:', roomId);
     socketService.onNewMessage(handleNewMessage);
     socketService.onTypingUpdate(handleTyping);
 
@@ -100,7 +112,7 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
 
   // Auto-scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // Handle message send
@@ -117,28 +129,17 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
         timestamp: new Date().toISOString(),
       };
 
-      console.log('Chat - Sending message:', messageData);
-      console.log('Chat - Room ID:', roomId);
-
-      // Clear the input immediately
-      setNewMessage('');
-
-      // Send via socket for real-time updates to all users (including self)
-      console.log('Chat - Emitting message via socket');
+      setNewMessage("");
       socketService.sendMessage(messageData);
-
-      setNewMessage('');
       socketService.stopTyping(roomId);
     } catch (error) {
-      console.error('Failed to send message:', error);
-      toast.error('Failed to send message');
+      toast.error("Failed to send message");
     }
   };
 
   // Handle typing indicators
   const handleTyping = (value: string) => {
     setNewMessage(value);
-    
     if (value.trim()) {
       socketService.startTyping(roomId);
     } else {
@@ -151,11 +152,13 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
     const date = new Date(timestamp);
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
-    
     if (isToday) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      return date.toLocaleDateString([], { month: "short", day: "numeric" });
     }
   };
 
@@ -192,7 +195,9 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                   <Hash className="w-8 h-8 text-white" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-white text-xl font-bold mb-1">Welcome to #general!</h3>
+                  <h3 className="text-white text-xl font-bold mb-1">
+                    Welcome to #general!
+                  </h3>
                   <p className="text-[#b5bac1] text-sm leading-relaxed">
                     This is the start of the #general channel.
                   </p>
@@ -208,11 +213,14 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                 </div>
                 <div className="relative flex justify-center">
                   <span className="bg-[#313338] px-2 text-xs text-[#949ba4] font-medium">
-                    {new Date(messages[0]?.timestamp).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
+                    {new Date(messages[0]?.timestamp).toLocaleDateString(
+                      "en-US",
+                      {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      },
+                    )}
                   </span>
                 </div>
               </div>
@@ -221,28 +229,40 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
             {/* Messages */}
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
-                <div className="text-sm text-[#b5bac1]">Loading messages...</div>
+                <div className="text-sm text-[#b5bac1]">
+                  Loading messages...
+                </div>
               </div>
             ) : (
               <div className="px-4 pb-4">
                 {messages.map((message, index) => {
-                  const isConsecutive = index > 0 && 
+                  const isConsecutive =
+                    index > 0 &&
                     messages[index - 1].senderId === message.senderId &&
-                    new Date(message.timestamp).getTime() - new Date(messages[index - 1].timestamp).getTime() < 420000; // 7 minutes
+                    new Date(message.timestamp).getTime() -
+                      new Date(messages[index - 1].timestamp).getTime() <
+                      420000; // 7 minutes
 
                   return (
                     <div
                       key={message.id}
                       className={`group flex gap-4 py-0.5 px-4 -mx-4 hover:bg-[#2e3035] relative ${
-                        isConsecutive ? 'mt-0.5' : 'mt-4'
+                        isConsecutive ? "mt-0.5" : "mt-4"
                       }`}
                     >
                       {!isConsecutive ? (
                         <Avatar className="w-10 h-10 flex-shrink-0 mt-0.5">
-                          <AvatarImage 
-                            src={`https://ui-avatars.com/api/?name=${encodeURIComponent(message.sender)}&background=5865f2&color=fff&size=40`}
-                            alt={message.sender}
-                          />
+                          {message.profilePicId ? (
+                            <AvatarImage
+                              src={`/api/files/${message.profilePicId}`}
+                              alt={message.sender}
+                            />
+                          ) : (
+                            <AvatarImage
+                              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(message.sender)}&background=5865f2&color=fff&size=40`}
+                              alt={message.sender}
+                            />
+                          )}
                           <AvatarFallback className="bg-[#5865f2] text-white font-medium">
                             {message.sender.charAt(0).toUpperCase()}
                           </AvatarFallback>
@@ -254,7 +274,7 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                           </span>
                         </div>
                       )}
-                      
+
                       <div className="flex-1 min-w-0">
                         {!isConsecutive && (
                           <div className="flex items-baseline gap-2 mb-1">
@@ -269,6 +289,34 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                         <div className="text-[#dcddde] text-sm leading-relaxed break-words">
                           {message.text}
                         </div>
+                        {/* Reactions Row */}
+                        {message.reactions && message.reactions.length > 0 && (
+                          <div className="flex gap-1 mt-1">
+                            {Array.from(
+                              new Set(message.reactions.map((r) => r.emoji)),
+                            ).map((emoji) => {
+                              const count =
+                                message.reactions?.filter(
+                                  (r) => r.emoji === emoji,
+                                ).length || 0;
+                              const reacted = message.reactions?.some(
+                                (r) =>
+                                  r.emoji === emoji && r.userId === user?.id,
+                              );
+                              return (
+                                <button
+                                  key={emoji}
+                                  className={`px-2 py-0.5 rounded-full text-xs border ${reacted ? "bg-[#5865f2] text-white border-[#5865f2]" : "bg-[#232428] text-[#b5bac1] border-[#35373c]"} hover:bg-[#35373c]`}
+                                  onClick={() =>
+                                    handleReaction(message.id, emoji)
+                                  }
+                                >
+                                  <span>{emoji}</span> <span>{count}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
 
                       {/* Message Actions (visible on hover) */}
@@ -278,9 +326,43 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                             variant="ghost"
                             size="sm"
                             className="h-6 w-6 p-0 hover:bg-[#35373c] text-[#b5bac1] hover:text-white"
+                            onClick={() => setReactingMessageId(message.id)}
                           >
                             <Smile className="w-4 h-4" />
                           </Button>
+                          {/* Emoji Picker (simple) */}
+                          {reactingMessageId === message.id && (
+                            <div className="absolute z-50 right-8 top-0 bg-[#232428] border border-[#35373c] rounded shadow p-2 flex gap-1">
+                              {[
+                                "👍",
+                                "😂",
+                                "😮",
+                                "😢",
+                                "🎉",
+                                "❤️",
+                                "🔥",
+                                "👀",
+                              ].map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  className="text-xl hover:scale-125 transition-transform"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReaction(message.id, emoji);
+                                    setReactingMessageId(null);
+                                  }}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                              <button
+                                className="ml-2 text-xs text-[#b5bac1]"
+                                onClick={() => setReactingMessageId(null)}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -292,14 +374,19 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                   <div className="flex items-center gap-3 mt-4 px-4 -mx-4">
                     <div className="flex gap-1">
                       <div className="w-2 h-2 bg-[#b5bac1] rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-[#b5bac1] rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-[#b5bac1] rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      <div
+                        className="w-2 h-2 bg-[#b5bac1] rounded-full animate-bounce"
+                        style={{ animationDelay: "0.1s" }}
+                      ></div>
+                      <div
+                        className="w-2 h-2 bg-[#b5bac1] rounded-full animate-bounce"
+                        style={{ animationDelay: "0.2s" }}
+                      ></div>
                     </div>
                     <span className="text-sm text-[#b5bac1]">
-                      {typingUsers.length === 1 
+                      {typingUsers.length === 1
                         ? `${typingUsers[0].userName} is typing...`
-                        : `${typingUsers.length} people are typing...`
-                      }
+                        : `${typingUsers.length} people are typing...`}
                     </span>
                   </div>
                 )}
@@ -322,7 +409,7 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
           >
             <Plus className="w-5 h-5" />
           </Button>
-          
+
           <div className="flex-1 relative">
             <input
               type="text"
@@ -348,3 +435,5 @@ export const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
     </main>
   );
 };
+
+export default Chat;

@@ -1,21 +1,27 @@
-import React, { useState, ChangeEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import React, { useState, ChangeEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Login: React.FC = () => {
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
+    email: "",
+    password: "",
     rememberMe: false,
   });
-  const [error, setError] = useState<string>('');
-  const [success, setSuccess] = useState<string>('');
+  const [error, setError] = useState<string>("");
+  const [success, setSuccess] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -24,35 +30,37 @@ const Login: React.FC = () => {
     const { name, value, type, checked } = e.target;
     setFormData({
       ...formData,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]: type === "checkbox" ? checked : value,
     });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
     setIsLoading(true);
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      setError('Please enter a valid email address.');
+      setError("Please enter a valid email address.");
       setIsLoading(false);
       return;
     }
 
     if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters long.');
+      setError("Password must be at least 8 characters long.");
       setIsLoading(false);
       return;
     }
 
     try {
       await login(formData.email, formData.password);
-      setSuccess('Login successful! Redirecting to dashboard...');
+      setSuccess("Login successful! Redirecting to dashboard...");
       // Navigate immediately after successful login
-      navigate('/');
+      navigate("/");
     } catch (error: any) {
-      setError(error.message || 'An error occurred during login. Please try again.');
+      setError(
+        error.message || "An error occurred during login. Please try again.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -62,7 +70,9 @@ const Login: React.FC = () => {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">HiveCodeX</CardTitle>
+          <CardTitle className="text-2xl font-bold text-center">
+            HiveCodeX
+          </CardTitle>
           <CardDescription className="text-center">
             Sign in to your account to start collaborating
           </CardDescription>
@@ -92,7 +102,7 @@ const Login: React.FC = () => {
                 required
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
@@ -120,28 +130,27 @@ const Login: React.FC = () => {
               </Label>
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={isLoading}
-            >
+            <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Signing in...
                 </>
               ) : (
-                'Sign In'
+                "Sign In"
               )}
             </Button>
           </form>
 
           <div className="text-center space-y-2">
-            <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-primary hover:underline"
+            >
               Forgot your password?
             </Link>
             <div className="text-sm text-muted-foreground">
-              Don't have an account?{' '}
+              Don't have an account?{" "}
               <Link to="/register" className="text-primary hover:underline">
                 Sign up
               </Link>

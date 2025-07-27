@@ -1,8 +1,8 @@
-import React from 'react';
-import { GitBranch, GitCommit, GitMerge, Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
+import React from "react";
+import { GitBranch, GitCommit, GitMerge, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 
 interface GitPanelProps {
   isOpen: boolean;
@@ -40,14 +40,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({ isOpen, roomId }) => {
               origin
             </Badge>
           </div>
-          
+
           <div className="space-y-2">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
               Changes
             </div>
-            <div className="text-sm text-muted-foreground">
-              No changes
-            </div>
+            <div className="text-sm text-muted-foreground">No changes</div>
           </div>
         </div>
 

@@ -62,7 +62,6 @@
 
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
-
 }
 
 @layer base {
@@ -80,20 +79,20 @@
   .custom-scrollbar::-webkit-scrollbar {
     width: 8px;
   }
-  
+
   .custom-scrollbar::-webkit-scrollbar-track {
     background: hsl(var(--background));
   }
-  
+
   .custom-scrollbar::-webkit-scrollbar-thumb {
     background: hsl(var(--muted));
     border-radius: 4px;
   }
-  
+
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground));
   }
-  
+
   /* Hide scrollbar for Firefox */
   .custom-scrollbar {
     scrollbar-width: thin;
@@ -104,28 +103,28 @@
   .vscode-scrollbar::-webkit-scrollbar {
     width: 12px;
   }
-  
+
   .vscode-scrollbar::-webkit-scrollbar-track {
     background: transparent;
   }
-  
+
   .vscode-scrollbar::-webkit-scrollbar-thumb {
     background: rgba(121, 121, 121, 0.4);
     border-radius: 0;
     border: 3px solid transparent;
     background-clip: content-box;
   }
-  
+
   .vscode-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(121, 121, 121, 0.7);
     background-clip: content-box;
   }
-  
+
   .vscode-scrollbar::-webkit-scrollbar-thumb:active {
     background: rgba(121, 121, 121, 0.9);
     background-clip: content-box;
   }
-  
+
   /* Firefox support */
   .vscode-scrollbar {
     scrollbar-width: thin;
@@ -140,7 +139,7 @@
   }
 
   .user-cursor-before {
-    content: '';
+    content: "";
     position: absolute;
     width: 2px;
     height: 20px;
@@ -155,8 +154,14 @@
   }
 
   @keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
+    0%,
+    50% {
+      opacity: 1;
+    }
+    51%,
+    100% {
+      opacity: 0;
+    }
   }
 
   /* User cursor colors */
@@ -183,7 +188,7 @@
 
   /* Visual indicator for resize handle */
   .react-resizable-handle::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: 0;
@@ -214,7 +219,9 @@
   .panel-enter-active {
     opacity: 1;
     transform: translateX(0);
-    transition: opacity 300ms ease, transform 300ms ease;
+    transition:
+      opacity 300ms ease,
+      transform 300ms ease;
   }
 
   .panel-exit {
@@ -225,7 +232,9 @@
   .panel-exit-active {
     opacity: 0;
     transform: translateX(-100%);
-    transition: opacity 300ms ease, transform 300ms ease;
+    transition:
+      opacity 300ms ease,
+      transform 300ms ease;
   }
 
   /* Right panel minimize animation */
