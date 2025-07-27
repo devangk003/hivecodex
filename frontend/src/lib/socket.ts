@@ -49,7 +49,7 @@ class SocketService {
 
     this.socket.on("disconnect", () => {});
 
-    this.socket.on("connect_error", (error: any) => {});
+    this.socket.on("connect_error", (error: Error) => {});
 
     return this.socket;
   }
@@ -100,8 +100,6 @@ class SocketService {
           profilePicId,
         });
         this.roomId = roomId;
-      } else {
-      }
     }
   }
 
@@ -122,8 +120,6 @@ class SocketService {
       };
 
       this.socket.emit("message", messageWithRoom);
-    } else {
-    }
   }
 
   onNewMessage(callback: (message: Message) => void) {
@@ -266,8 +262,6 @@ class SocketService {
         ...change,
         roomId: this.roomId,
       });
-    } else {
-    }
   }
 
   onCollaborativeChange(callback: (change: CollaborativeChange) => void) {
@@ -279,8 +273,6 @@ class SocketService {
   sendCursorUpdate(cursor: UserCursor) {
     if (this.socket && this.roomId) {
       this.socket.emit("cursor-update", { ...cursor, roomId: this.roomId });
-    } else {
-    }
   }
 
   onCursorUpdate(callback: (cursor: UserCursor) => void) {
