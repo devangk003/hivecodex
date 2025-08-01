@@ -1,4 +1,4 @@
-import * as React from "react";
+import * as React from 'react';
 
 export const ZipUploadIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg

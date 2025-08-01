@@ -4,9 +4,9 @@ import React, {
   useState,
   useEffect,
   ReactNode,
-} from "react";
-import { User, authAPI, activityAPI } from "@/lib/api";
-import socketService from "@/lib/socket";
+} from 'react';
+import { User, authAPI, activityAPI } from '@/lib/api';
+import socketService from '@/lib/socket';
 
 interface AuthContextType {
   user: User | null;
@@ -26,7 +26,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
@@ -38,15 +38,15 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [activityStatus, setActivityStatusState] = useState<string>("Online");
+  const [activityStatus, setActivityStatusState] = useState<string>('Online');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const initAuth = async () => {
-      const storedToken = localStorage.getItem("token");
-      const storedUser = localStorage.getItem("user");
+      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
 
-      if (storedToken && storedUser && storedUser !== "undefined") {
+      if (storedToken && storedUser && storedUser !== 'undefined') {
         try {
           const parsedUser = JSON.parse(storedUser);
           setToken(storedToken);
@@ -64,20 +64,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(userData);
           if (userData.activityStatus)
             setActivityStatusState(userData.activityStatus);
-          console.log("Token verified successfully, user:", userData);
+          
+          // Set initial online status
+          await setActivityStatus('Online');
+          
+          console.log('Token verified successfully, user:', userData);
         } catch (error) {
-          console.error("Token verification failed:", error);
-          console.log("Stored token:", storedToken ? "Present" : "Missing");
-          console.log("Stored user:", storedUser ? "Present" : "Missing");
-          localStorage.removeItem("token");
-          localStorage.removeItem("user");
+          console.error('Token verification failed:', error);
+          console.log('Stored token:', storedToken ? 'Present' : 'Missing');
+          console.log('Stored user:', storedUser ? 'Present' : 'Missing');
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
           setToken(null);
           setUser(null);
         }
       } else {
         // Clean up invalid localStorage entries
-        if (storedUser === "undefined") {
-          localStorage.removeItem("user");
+        if (storedUser === 'undefined') {
+          localStorage.removeItem('user');
         }
       }
       setIsLoading(false);
@@ -100,11 +104,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (userData.activityStatus)
       setActivityStatusState(userData.activityStatus);
 
-    localStorage.setItem("token", newToken);
-    localStorage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem('token', newToken);
+    localStorage.setItem('user', JSON.stringify(userData));
 
     // Connect socket
     socketService.connect(newToken);
+    
+    // Set initial online status
+    await setActivityStatus('Online');
   };
 
   const register = async (name: string, email: string, password: string) => {
@@ -116,8 +123,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = () => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
 
     // Disconnect socket
     socketService.disconnect();
@@ -125,15 +132,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Sitewide activity status setter
   const setActivityStatus = async (status: string) => {
-    await activityAPI.setStatus(status);
-    setActivityStatusState(status);
-    // Optionally update user object in state/localStorage
-    setUser((prev) => (prev ? { ...prev, activityStatus: status } : prev));
-    const storedUser = localStorage.getItem("user");
-    if (storedUser && storedUser !== "undefined") {
-      const parsed = JSON.parse(storedUser);
-      parsed.activityStatus = status;
-      localStorage.setItem("user", JSON.stringify(parsed));
+    try {
+      await activityAPI.setStatus(status);
+      setActivityStatusState(status);
+      // Optionally update user object in state/localStorage
+      setUser(prev => (prev ? { ...prev, activityStatus: status } : prev));
+      const storedUser = localStorage.getItem('user');
+      if (storedUser && storedUser !== 'undefined') {
+        const parsed = JSON.parse(storedUser);
+        parsed.activityStatus = status;
+        localStorage.setItem('user', JSON.stringify(parsed));
+      }
+    } catch (error) {
+      // Silently handle API errors - just update local state
+      console.warn('Activity status API not available, updating locally only');
+      setActivityStatusState(status);
+      setUser(prev => (prev ? { ...prev, activityStatus: status } : prev));
+      const storedUser = localStorage.getItem('user');
+      if (storedUser && storedUser !== 'undefined') {
+        const parsed = JSON.parse(storedUser);
+        parsed.activityStatus = status;
+        localStorage.setItem('user', JSON.stringify(parsed));
+      }
     }
   };
 

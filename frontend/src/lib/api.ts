@@ -1,45 +1,45 @@
-import axios from "axios";
+import axios from 'axios';
 
 // Use '/api' for all API calls
-export const API_BASE_URL = "/api";
+export const API_BASE_URL = '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
 });
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("token");
+  config => {
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => {
+  error => {
     return Promise.reject(error);
-  },
+  }
 );
 
 // Response interceptor to handle auth errors
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
+  response => response,
+  error => {
     if (error.response?.status === 401) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      window.location.href = "/login";
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
     }
     if (error.response?.status === 403) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      window.location.href = "/login";
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
     }
     return Promise.reject(error);
-  },
+  }
 );
 
 export interface User {
@@ -49,15 +49,58 @@ export interface User {
   profilePicId?: string;
   activityStatus?: string;
 }
+// User API
+export const userAPI = {
+  getUserProfile: async (userId: string) => {
+    try {
+      const response = await api.get(`/users/${userId}/profile`);
+      return response.data;
+    } catch (error) {
+      console.warn(`User profile endpoint not available for user ${userId}`);
+      return null;
+    }
+  },
+
+  getUsersInRoom: async (roomId: string) => {
+    try {
+      const response = await api.get(`/rooms/${roomId}/users`);
+      return response.data;
+    } catch (error) {
+      console.warn(`Room users endpoint not available for room ${roomId}`);
+      return [];
+    }
+  },
+
+  updateUserStatus: async (status: string, roomId?: string) => {
+    try {
+      const response = await api.put('/user/status', { status, roomId });
+      return response.data;
+    } catch (error) {
+      console.warn('User status update endpoint not available');
+      return { status, roomId };
+    }
+  },
+};
+
 // Activity Status API
 export const activityAPI = {
   getStatus: async () => {
-    const response = await api.get("/user/activity-status");
-    return response.data.activityStatus;
+    try {
+      const response = await api.get('/user/activity-status');
+      return response.data.activityStatus;
+    } catch (error) {
+      console.warn('Activity status endpoint not available');
+      return 'Online'; // Default status
+    }
   },
   setStatus: async (activityStatus: string) => {
-    const response = await api.put("/user/activity-status", { activityStatus });
-    return response.data.activityStatus;
+    try {
+      const response = await api.put('/user/activity-status', { activityStatus });
+      return response.data.activityStatus;
+    } catch (error) {
+      console.warn('Activity status endpoint not available');
+      return activityStatus; // Return the requested status as if it was set
+    }
   },
 };
 
@@ -109,17 +152,17 @@ export interface Participant {
 // Auth API
 export const authAPI = {
   login: async (email: string, password: string) => {
-    const response = await api.post("/login", { email, password });
+    const response = await api.post('/login', { email, password });
     return response.data;
   },
 
   register: async (name: string, email: string, password: string) => {
-    const response = await api.post("/register", { name, email, password });
+    const response = await api.post('/register', { name, email, password });
     return response.data;
   },
 
   getCurrentUser: async () => {
-    const response = await api.get("/user");
+    const response = await api.get('/user');
     return response.data;
   },
 
@@ -130,11 +173,11 @@ export const authAPI = {
   }) => {
     // Always use multipart/form-data for profile updates
     const formData = new FormData();
-    if (data.name) formData.append("name", data.name);
-    if (data.email) formData.append("email", data.email);
-    if (data.profilePic) formData.append("profilePic", data.profilePic);
-    const response = await api.post("/profile/update", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
+    if (data.name) formData.append('name', data.name);
+    if (data.email) formData.append('email', data.email);
+    if (data.profilePic) formData.append('profilePic', data.profilePic);
+    const response = await api.post('/profile/update', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
   },
@@ -143,12 +186,12 @@ export const authAPI = {
 // Room API
 export const roomAPI = {
   getAllRooms: async () => {
-    const response = await api.get("/rooms");
+    const response = await api.get('/rooms');
     return response.data;
   },
 
   getUserRooms: async () => {
-    const response = await api.get("/user/rooms");
+    const response = await api.get('/user/rooms');
     // Always return an array
     if (Array.isArray(response.data)) return response.data;
     if (response.data && Array.isArray(response.data.rooms))
@@ -165,9 +208,9 @@ export const roomAPI = {
     name: string,
     description: string,
     isPrivate: boolean = false,
-    password?: string,
+    password?: string
   ) => {
-    const response = await api.post("/rooms", {
+    const response = await api.post('/rooms', {
       name,
       description,
       isPrivate,
@@ -202,7 +245,7 @@ export const fileAPI = {
   moveFileOrFolder: async (
     roomId: string,
     fileId: string,
-    newParentId?: string | null,
+    newParentId?: string | null
   ) => {
     // PATCH endpoint to update parentId of file/folder
     const payload: { fileId: string; newParentId?: string | null } = { fileId };
@@ -217,19 +260,19 @@ export const fileAPI = {
   uploadFile: async (
     roomId: string,
     file: File,
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number) => void
   ) => {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append('file', file);
 
     const response = await api.post(`/rooms/${roomId}/files`, formData, {
       headers: {
-        "Content-Type": "multipart/form-data",
+        'Content-Type': 'multipart/form-data',
       },
-      onUploadProgress: (progressEvent) => {
+      onUploadProgress: progressEvent => {
         if (onProgress && progressEvent.total) {
           const progress = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total,
+            (progressEvent.loaded * 100) / progressEvent.total
           );
           onProgress(progress);
         }
@@ -242,32 +285,34 @@ export const fileAPI = {
   uploadFolder: async (
     roomId: string,
     files: File[],
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number) => void
   ) => {
     const formData = new FormData();
     for (const file of files) {
       // Use webkitRelativePath if available, fallback to name
-      const relPath = (typeof (file as File & { webkitRelativePath?: string }).webkitRelativePath === 'string'
-        ? (file as File & { webkitRelativePath?: string }).webkitRelativePath
-        : file.name);
-      formData.append("files", file, relPath);
+      const relPath =
+        typeof (file as File & { webkitRelativePath?: string })
+          .webkitRelativePath === 'string'
+          ? (file as File & { webkitRelativePath?: string }).webkitRelativePath
+          : file.name;
+      formData.append('files', file, relPath);
     }
     const response = await api.post(
       `/rooms/${roomId}/upload-folder`,
       formData,
       {
         headers: {
-          "Content-Type": "multipart/form-data",
+          'Content-Type': 'multipart/form-data',
         },
-        onUploadProgress: (progressEvent) => {
+        onUploadProgress: progressEvent => {
           if (onProgress && progressEvent.total) {
             const progress = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total,
+              (progressEvent.loaded * 100) / progressEvent.total
             );
             onProgress(progress);
           }
         },
-      },
+      }
     );
     return response.data;
   },
@@ -275,27 +320,27 @@ export const fileAPI = {
   uploadProject: async (
     roomId: string,
     zipFile: File,
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number) => void
   ) => {
     const formData = new FormData();
-    formData.append("zipFile", zipFile);
+    formData.append('zipFile', zipFile);
 
     const response = await api.post(
       `/rooms/${roomId}/upload-project`,
       formData,
       {
         headers: {
-          "Content-Type": "multipart/form-data",
+          'Content-Type': 'multipart/form-data',
         },
-        onUploadProgress: (progressEvent) => {
+        onUploadProgress: progressEvent => {
           if (onProgress && progressEvent.total) {
             const progress = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total,
+              (progressEvent.loaded * 100) / progressEvent.total
             );
             onProgress(progress);
           }
         },
-      },
+      }
     );
 
     return response.data;
@@ -304,7 +349,7 @@ export const fileAPI = {
   bulkOperations: async (
     roomId: string,
     operation: string,
-    fileIds: string[],
+    fileIds: string[]
   ) => {
     const response = await api.post(`/rooms/${roomId}/bulk-operations`, {
       operation,
@@ -315,7 +360,7 @@ export const fileAPI = {
 
   downloadFile: async (fileId: string) => {
     const response = await api.get(`/files/${fileId}/download`, {
-      responseType: "blob",
+      responseType: 'blob',
     });
     return response.data;
   },
@@ -333,7 +378,7 @@ export const fileAPI = {
   deleteFile: async (roomId: string, fileId: string) => {
     // Use batch delete endpoint for both files and folders
     const response = await api.patch(`/rooms/${roomId}/files`, {
-      operation: "delete",
+      operation: 'delete',
       fileIds: [fileId],
     });
     return response.data;
@@ -355,7 +400,7 @@ export const fileAPI = {
   createFolder: async (
     roomId: string,
     name: string,
-    parentId: string | null,
+    parentId: string | null
   ) => {
     const response = await api.post(`/rooms/${roomId}/create-folder`, {
       name,

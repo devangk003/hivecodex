@@ -1,0 +1,230 @@
+/* Real-time collaboration cursor styles */
+
+/* Base cursor styles */
+.user-cursor {
+  position: relative;
+  border-left: 2px solid var(--cursor-color, #FF6B6B);
+  background: transparent;
+  z-index: 1000;
+}
+
+.user-cursor-before {
+  position: absolute;
+  top: -2px;
+  left: -1px;
+  width: 2px;
+  height: calc(100% + 4px);
+  background-color: var(--cursor-color, #FF6B6B);
+  z-index: 1001;
+  pointer-events: none;
+}
+
+/* Cursor label with user name */
+.user-cursor-label {
+  position: absolute;
+  top: -24px;
+  left: -1px;
+  background-color: var(--cursor-color, #FF6B6B);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  z-index: 1002;
+  pointer-events: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: cursorLabelFadeIn 0.2s ease-out;
+  transform-origin: bottom left;
+}
+
+.user-cursor-label::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 6px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid var(--cursor-color, #FF6B6B);
+}
+
+/* Selection highlighting */
+.user-selection {
+  background-color: var(--selection-color, rgba(255, 107, 107, 0.2));
+  border-radius: 2px;
+  position: relative;
+  z-index: 999;
+}
+
+/* User-specific color classes */
+.cursor-color-0 {
+  --cursor-color: #FF6B6B;
+  --selection-color: rgba(255, 107, 107, 0.2);
+}
+
+.cursor-color-1 {
+  --cursor-color: #4ECDC4;
+  --selection-color: rgba(78, 205, 196, 0.2);
+}
+
+.cursor-color-2 {
+  --cursor-color: #45B7D1;
+  --selection-color: rgba(69, 183, 209, 0.2);
+}
+
+.cursor-color-3 {
+  --cursor-color: #96CEB4;
+  --selection-color: rgba(150, 206, 180, 0.2);
+}
+
+.cursor-color-4 {
+  --cursor-color: #FFEAA7;
+  --selection-color: rgba(255, 234, 167, 0.3);
+}
+
+.cursor-color-5 {
+  --cursor-color: #DDA0DD;
+  --selection-color: rgba(221, 160, 221, 0.2);
+}
+
+.cursor-color-6 {
+  --cursor-color: #98D8C8;
+  --selection-color: rgba(152, 216, 200, 0.2);
+}
+
+.cursor-color-7 {
+  --cursor-color: #FFB6C1;
+  --selection-color: rgba(255, 182, 193, 0.2);
+}
+
+.cursor-color-8 {
+  --cursor-color: #87CEEB;
+  --selection-color: rgba(135, 206, 235, 0.2);
+}
+
+.cursor-color-9 {
+  --cursor-color: #F0E68C;
+  --selection-color: rgba(240, 230, 140, 0.3);
+}
+
+/* Animations */
+@keyframes cursorLabelFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}
+
+.user-cursor-active {
+  animation: cursorBlink 1s infinite;
+}
+
+/* Typing indicator */
+.user-typing-indicator {
+  position: relative;
+}
+
+.user-typing-indicator::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -8px;
+  width: 4px;
+  height: 4px;
+  background-color: var(--cursor-color, #FF6B6B);
+  border-radius: 50%;
+  animation: typingPulse 1.5s ease-in-out infinite;
+  transform: translateY(-50%);
+}
+
+/* Enhanced typing label styling */
+.user-cursor-label.user-typing-indicator {
+  animation: cursorLabelFadeIn 0.2s ease-out, typingGlow 2s ease-in-out infinite;
+}
+
+@keyframes typingGlow {
+  0%, 100% {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 2px 8px rgba(255, 255, 255, 0.3), 0 0 12px var(--cursor-color, #FF6B6B);
+  }
+}
+
+@keyframes typingPulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translateY(-50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.2);
+  }
+}
+
+/* Multiple cursor container */
+.collaboration-cursors {
+  position: relative;
+  z-index: 1000;
+}
+
+/* Hover effects for better UX */
+.user-cursor:hover .user-cursor-label {
+  opacity: 1;
+  transform: translateY(0) scale(1.05);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .user-cursor-label {
+    font-size: 10px;
+    padding: 1px 4px;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .user-cursor-before {
+    border: 1px solid #000;
+  }
+  
+  .user-selection {
+    border: 1px solid var(--cursor-color, #FF6B6B);
+  }
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .user-cursor-label {
+    animation: none;
+  }
+  
+  .user-cursor-active {
+    animation: none;
+  }
+  
+  .user-typing-indicator::after {
+    animation: none;
+  }
+}
+
+/* Dark theme adjustments */
+.monaco-editor.vs-dark .user-cursor-label {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Light theme adjustments */
+.monaco-editor .user-cursor-label {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}

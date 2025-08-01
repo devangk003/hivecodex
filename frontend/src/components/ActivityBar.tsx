@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react';
 import {
   File,
   Search,
@@ -17,14 +17,14 @@ import {
   Moon,
   Wifi,
   WifiOff,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
+} from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,10 +32,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
-import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+} from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
+import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface ActivityBarItem {
   id: string;
@@ -45,17 +45,17 @@ interface ActivityBarItem {
 }
 
 const activityBarItems: ActivityBarItem[] = [
-  { id: "files", icon: <File className="w-5 h-5" />, label: "Explorer" },
-  { id: "search", icon: <Search className="w-5 h-5" />, label: "Search" },
+  { id: 'files', icon: <File className="w-5 h-5" />, label: 'Explorer' },
+  { id: 'search', icon: <Search className="w-5 h-5" />, label: 'Search' },
   {
-    id: "git",
+    id: 'git',
     icon: <GitBranch className="w-5 h-5" />,
-    label: "Source Control",
+    label: 'Source Control',
   },
   {
-    id: "extensions",
+    id: 'extensions',
     icon: <Package className="w-5 h-5" />,
-    label: "Extensions",
+    label: 'Extensions',
   },
 ];
 
@@ -91,13 +91,13 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   const { user, logout, activityStatus, setActivityStatus } = useAuth();
   const navigate = useNavigate();
   // Map activityStatus to booleans for UI
-  const status = activityStatus?.toLowerCase() || "online";
-  const isOnline = status === "online";
-  const isAway = status === "away";
-  const isOffline = status === "offline";
+  const status = activityStatus?.toLowerCase() || 'online';
+  const isOnline = status === 'online';
+  const isAway = status === 'away';
+  const isOffline = status === 'offline';
 
   const handleViewChange = (viewId: string) => {
-    console.log("ActivityBar - handleViewChange called:", {
+    console.log('ActivityBar - handleViewChange called:', {
       viewId,
       activeView,
       isPanelOpen,
@@ -105,16 +105,16 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
     if (activeView === viewId) {
       // If clicking the same view, toggle panel open/closed
-      console.log("ActivityBar - Same view clicked, toggling panel");
+      console.log('ActivityBar - Same view clicked, toggling panel');
       onPanelToggle();
     } else {
       // If clicking different view, switch to it and ensure panel is open
       console.log(
-        "ActivityBar - Different view clicked, switching and opening panel",
+        'ActivityBar - Different view clicked, switching and opening panel'
       );
       onViewChange(viewId);
       if (!isPanelOpen) {
-        console.log("ActivityBar - Panel was closed, opening it");
+        console.log('ActivityBar - Panel was closed, opening it');
         onPanelToggle();
       }
     }
@@ -122,11 +122,11 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 
   const handleLogout = () => {
     logout();
-    navigate("/login");
+    navigate('/login');
   };
 
   const handleLeaveRoom = () => {
-    navigate("/");
+    navigate('/');
   };
 
   const handleCopyRoomId = () => {
@@ -140,9 +140,9 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   };
 
   const getMicColor = () => {
-    if (isDeafened) return "text-red-500";
-    if (isMuted) return "text-yellow-500";
-    return isVoiceConnected ? "text-green-500" : "text-muted-foreground";
+    if (isDeafened) return 'text-red-500';
+    if (isMuted) return 'text-yellow-500';
+    return isVoiceConnected ? 'text-green-500' : 'text-muted-foreground';
   };
 
   const getStatusIcon = () => {
@@ -152,20 +152,20 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
   };
 
   const getStatusColor = () => {
-    if (isOffline) return "text-red-500";
-    if (isAway) return "text-yellow-500";
-    return "text-green-500";
+    if (isOffline) return 'text-red-500';
+    if (isAway) return 'text-yellow-500';
+    return 'text-green-500';
   };
 
   const getStatusText = () => {
-    if (isOffline) return "Offline";
-    if (isAway) return "Away";
-    return "Online";
+    if (isOffline) return 'Offline';
+    if (isAway) return 'Away';
+    return 'Online';
   };
 
   const handleStatusChange = async (newStatus: string) => {
     await setActivityStatus(
-      newStatus.charAt(0).toUpperCase() + newStatus.slice(1),
+      newStatus.charAt(0).toUpperCase() + newStatus.slice(1)
     );
   };
 
@@ -174,7 +174,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
       <div className="w-12 bg-discord-sidebar border-r border-discord-border flex flex-col items-center py-2 gap-1">
         {/* Top Activity Items */}
         <div className="flex flex-col gap-1">
-          {activityBarItems.map((item) => (
+          {activityBarItems.map(item => (
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
                 <Button
@@ -182,8 +182,8 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
                   size="sm"
                   className={`h-10 w-10 p-0 rounded-sm transition-colors duration-200 flex items-center justify-center ${
                     activeView === item.id && isPanelOpen
-                      ? "bg-discord-primary/20 text-discord-primary border-l-2 border-discord-primary"
-                      : "text-muted-foreground hover:bg-discord-sidebar-hover hover:text-foreground"
+                      ? 'bg-discord-primary/20 text-discord-primary border-l-2 border-discord-primary'
+                      : 'text-muted-foreground hover:bg-discord-sidebar-hover hover:text-foreground'
                   }`}
                   onClick={() => handleViewChange(item.id)}
                 >
@@ -216,11 +216,11 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
               <p>
                 {isVoiceConnected
                   ? isDeafened
-                    ? "Deafened"
+                    ? 'Deafened'
                     : isMuted
-                      ? "Muted"
-                      : "Connected"
-                  : "Connect Voice"}
+                      ? 'Muted'
+                      : 'Connected'
+                  : 'Connect Voice'}
               </p>
             </TooltipContent>
           </Tooltip>

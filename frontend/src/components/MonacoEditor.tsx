@@ -1,12 +1,7 @@
-
-  // Correctly placed useEffect for file selection
-  // Place this just before the return statement inside MonacoEditor
-
-  // Place this after loadFileContent and handleTabClick, before return
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Editor, useMonaco } from "@monaco-editor/react";
-import { editor } from "monaco-editor";
-import { UserCursor, CollaborativeChange } from "@/lib/collaboration";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Editor, useMonaco } from '@monaco-editor/react';
+import { editor } from 'monaco-editor';
+import { UserCursor, CollaborativeChange } from '@/lib/collaboration';
 import {
   X,
   Save,
@@ -16,33 +11,16 @@ import {
   Search,
   Replace,
   Users,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { fileAPI } from "@/lib/api";
-import { toast } from "sonner";
-import { useAuth } from "@/contexts/AuthContext";
-import { collaborationService } from "@/lib/collaboration";
-import socketService from "@/lib/socket";
-import { Badge } from "@/components/ui/badge";
-
-interface FileTab {
-  fileId: string;
-  name: string;
-  content: string;
-  language: string;
-  isModified: boolean;
-  isActive: boolean;
-  path: string;
-}
-
-export type SelectedFile = {
-  id: string;
-  name: string;
-  content?: string;
-  extension?: string;
-  fileId: string;
-  path: string;
-};
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { fileAPI } from '@/lib/api';
+import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
+import { collaborationService } from '@/lib/collaboration';
+import socketService from '@/lib/socket';
+import { Badge } from '@/components/ui/badge';
+import type { FileTab, SelectedFile } from '@/types';
+import './MonacoEditor.css';
 
 interface MonacoEditorProps {
   roomId: string;
@@ -52,47 +30,47 @@ interface MonacoEditorProps {
 
 const getLanguageFromExtension = (extension: string): string => {
   const languageMap: { [key: string]: string } = {
-    js: "javascript",
-    jsx: "javascript",
-    ts: "typescript",
-    tsx: "typescript",
-    py: "python",
-    java: "java",
-    cpp: "cpp",
-    c: "c",
-    cs: "csharp",
-    php: "php",
-    rb: "ruby",
-    go: "go",
-    rs: "rust",
-    swift: "swift",
-    kt: "kotlin",
-    scala: "scala",
-    html: "html",
-    css: "css",
-    scss: "scss",
-    sass: "sass",
-    less: "less",
-    json: "json",
-    xml: "xml",
-    yaml: "yaml",
-    yml: "yaml",
-    md: "markdown",
-    sql: "sql",
-    sh: "shell",
-    bash: "shell",
-    zsh: "shell",
-    ps1: "powershell",
-    dockerfile: "dockerfile",
-    env: "properties",
-    properties: "properties",
-    ini: "ini",
-    toml: "toml",
-    gitignore: "gitignore",
-    txt: "plaintext",
+    js: 'javascript',
+    jsx: 'javascript',
+    ts: 'typescript',
+    tsx: 'typescript',
+    py: 'python',
+    java: 'java',
+    cpp: 'cpp',
+    c: 'c',
+    cs: 'csharp',
+    php: 'php',
+    rb: 'ruby',
+    go: 'go',
+    rs: 'rust',
+    swift: 'swift',
+    kt: 'kotlin',
+    scala: 'scala',
+    html: 'html',
+    css: 'css',
+    scss: 'scss',
+    sass: 'sass',
+    less: 'less',
+    json: 'json',
+    xml: 'xml',
+    yaml: 'yaml',
+    yml: 'yaml',
+    md: 'markdown',
+    sql: 'sql',
+    sh: 'shell',
+    bash: 'shell',
+    zsh: 'shell',
+    ps1: 'powershell',
+    dockerfile: 'dockerfile',
+    env: 'properties',
+    properties: 'properties',
+    ini: 'ini',
+    toml: 'toml',
+    gitignore: 'gitignore',
+    txt: 'plaintext',
   };
 
-  return languageMap[extension.toLowerCase()] || "plaintext";
+  return languageMap[extension.toLowerCase()] || 'plaintext';
 };
 
 export const MonacoEditor: React.FC<MonacoEditorProps> = ({
@@ -104,7 +82,9 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
   const [activeTabIndex, setActiveTabIndex] = useState(-1);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [collaborators, setCollaborators] = useState<Map<string, UserCursor>>(new Map());
+  const [collaborators, setCollaborators] = useState<Map<string, UserCursor>>(
+    new Map()
+  );
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const { user } = useAuth();
   const monaco = useMonaco();
@@ -122,12 +102,12 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
         if (activeTab && activeTab.fileId === change.fileId) {
           const model = editorRef.current?.getModel();
           if (model) {
-            setTabs((prev) =>
+            setTabs(prev =>
               prev.map((tab, index) =>
                 index === activeTabIndex
                   ? { ...tab, content: model.getValue() }
-                  : tab,
-              ),
+                  : tab
+              )
             );
           }
         }
@@ -136,22 +116,37 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
       // cursor: UserCursor
       const handleCursorUpdate = (cursor: UserCursor) => {
         collaborationService.updateRemoteCursor(cursor);
-        setCollaborators(new Map(collaborationService.getUserCursors()));
+        
+        // Update collaborators state with current file users only
+        const currentFileId = tabs[activeTabIndex]?.fileId;
+        if (currentFileId) {
+          const currentFileCursors = new Map();
+          collaborationService.getUserCursors().forEach((c, userId) => {
+            if (c.fileId === currentFileId) {
+              currentFileCursors.set(userId, c);
+            }
+          });
+          setCollaborators(currentFileCursors);
+        }
       };
 
       // data: { fileId: string, content: string, version: number }
-      const handleFileSync = (data: { fileId: string; content: string; version: number }) => {
+      const handleFileSync = (data: {
+        fileId: string;
+        content: string;
+        version: number;
+      }) => {
         collaborationService.initializeFile(
           data.fileId,
           data.content,
-          data.version,
+          data.version
         );
-        const tabIndex = tabs.findIndex((t) => t.fileId === data.fileId);
+        const tabIndex = tabs.findIndex(t => t.fileId === data.fileId);
         if (tabIndex > -1) {
-          setTabs((prev) =>
+          setTabs(prev =>
             prev.map((tab, index) =>
-              index === tabIndex ? { ...tab, content: data.content } : tab,
-            ),
+              index === tabIndex ? { ...tab, content: data.content } : tab
+            )
           );
         }
       };
@@ -188,43 +183,63 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
 
   // ...existing code...
 
-
-
   // file: { fileId: string, name: string, extension?: string, path: string }
-  const loadFileContent = async (file: { fileId: string; name: string; extension?: string; path: string }) => {
-    if (!file.fileId) return;
+  const loadFileContent = useCallback(
+    async (file: {
+      fileId: string;
+      name: string;
+      extension?: string;
+      path: string;
+    }) => {
+      if (!file.fileId) return;
 
-    setIsLoading(true);
-    try {
-      const fileData = await fileAPI.getFileContent(file.fileId);
-      const language = getLanguageFromExtension(file.extension || "");
+      // Check if tab already exists
+      const existingTabIndex = tabs.findIndex(tab => tab.fileId === file.fileId);
+      if (existingTabIndex >= 0) {
+        // Just activate the existing tab
+        setActiveTabIndex(existingTabIndex);
+        setTabs(prev => 
+          prev.map((tab, index) => ({
+            ...tab,
+            isActive: index === existingTabIndex
+          }))
+        );
+        return;
+      }
 
-      const newTab: FileTab = {
-        fileId: file.fileId,
-        name: file.name,
-        content: fileData.content || "",
-        language,
-        isModified: false,
-        isActive: true,
-        path: file.path || file.name,
-      };
+      setIsLoading(true);
+      try {
+        const fileData = await fileAPI.getFileContent(file.fileId);
+        const language = getLanguageFromExtension(file.extension || '');
 
-      setTabs((prev) => {
-        const newTabs = prev.map((tab) => ({ ...tab, isActive: false }));
-        newTabs.push(newTab);
-        return newTabs;
-      });
+        const newTab: FileTab = {
+          fileId: file.fileId,
+          name: file.name,
+          content: fileData.content || '',
+          language,
+          isModified: false,
+          isActive: true,
+          path: file.path || file.name,
+        };
 
-      setActiveTabIndex(tabs.length);
-      collaborationService.initializeFile(newTab.fileId, newTab.content, 0);
-      socketService.requestFileSync(newTab.fileId);
-    } catch (error) {
-      console.error("Failed to load file content:", error);
-      toast.error("Failed to load file content");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+        setTabs(prev => {
+          const newTabs = prev.map(tab => ({ ...tab, isActive: false }));
+          newTabs.push(newTab);
+          return newTabs;
+        });
+
+        setActiveTabIndex(prev => prev + 1);
+        collaborationService.initializeFile(newTab.fileId, newTab.content, 0);
+        socketService.requestFileSync(newTab.fileId);
+      } catch (error) {
+        console.error('Failed to load file content:', error);
+        toast.error('Failed to load file content');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [tabs]
+  );
 
   const handleEditorChange = useCallback(
     (value: string | undefined) => {
@@ -237,12 +252,12 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
 
       const currentTab = tabs[activeTabIndex];
       if (currentTab) {
-        setTabs((prev) =>
+        setTabs(prev =>
           prev.map((tab, index) =>
             index === activeTabIndex
               ? { ...tab, content: value, isModified: true }
-              : tab,
-          ),
+              : tab
+          )
         );
 
         if (onFileContentChange) {
@@ -250,38 +265,41 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
         }
       }
     },
-    [activeTabIndex, tabs, onFileContentChange],
+    [activeTabIndex, tabs, onFileContentChange]
   );
 
-  const handleSaveFile = async (tabIndex: number) => {
-    const tab = tabs[tabIndex];
-    if (!tab || !tab.isModified) return;
+  const handleSaveFile = useCallback(
+    async (tabIndex: number) => {
+      const tab = tabs[tabIndex];
+      if (!tab || !tab.isModified) return;
 
-    setIsSaving(true);
-    try {
-      await fileAPI.updateFileContent(tab.fileId, tab.content);
+      setIsSaving(true);
+      try {
+        await fileAPI.updateFileContent(tab.fileId, tab.content);
 
-      setTabs((prev) =>
-        prev.map((t, index) =>
-          index === tabIndex ? { ...t, isModified: false } : t,
-        ),
-      );
+        setTabs(prev =>
+          prev.map((t, index) =>
+            index === tabIndex ? { ...t, isModified: false } : t
+          )
+        );
 
-      toast.success(`${tab.name} saved successfully`);
-    } catch (error) {
-      console.error("Failed to save file:", error);
-      toast.error("Failed to save file");
-    } finally {
-      setIsSaving(false);
-    }
-  };
+        toast.success(`${tab.name} saved successfully`);
+      } catch (error) {
+        console.error('Failed to save file:', error);
+        toast.error('Failed to save file');
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [tabs]
+  );
 
   const handleCloseTab = (tabIndex: number) => {
     const tab = tabs[tabIndex];
 
     if (tab.isModified) {
       const confirmed = window.confirm(
-        `${tab.name} has unsaved changes. Close anyway?`,
+        `${tab.name} has unsaved changes. Close anyway?`
       );
       if (!confirmed) return;
     }
@@ -293,7 +311,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
     } else if (tabIndex === activeTabIndex) {
       setActiveTabIndex(Math.max(0, tabIndex - 1));
     } else if (tabIndex < activeTabIndex) {
-      setActiveTabIndex((prev) => prev - 1);
+      setActiveTabIndex(prev => prev - 1);
     }
 
     setTabs(
@@ -304,52 +322,66 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
           (tabIndex === activeTabIndex
             ? Math.max(0, tabIndex - 1)
             : activeTabIndex),
-      })),
+      }))
     );
   };
 
-  const handleTabClick = (tabIndex: number) => {
-    console.log("🗂️ Switching to tab:", tabIndex);
-    if (activeTabIndex === tabIndex) return;
+  const handleTabClick = useCallback(
+    (tabIndex: number) => {
+      console.log('🗂️ Switching to tab:', tabIndex);
+      if (activeTabIndex === tabIndex) return;
 
-    setActiveTabIndex(tabIndex);
-    setTabs((prev) =>
-      prev.map((tab, index) => ({
-        ...tab,
-        isActive: index === tabIndex,
-      })),
-    );
-
-    const newActiveTab = tabs[tabIndex];
-    if (editorRef.current && newActiveTab && monaco) {
-      console.log("📋 Switching editor model to:", newActiveTab.fileId);
-
-      // Get or create the model for this file
-      let model = monaco.editor.getModel(monaco.Uri.parse(newActiveTab.fileId));
-      if (!model) {
-        model = monaco.editor.createModel(
-          newActiveTab.content,
-          newActiveTab.language,
-          monaco.Uri.parse(newActiveTab.fileId),
-        );
-      }
-
-      editorRef.current.setModel(model);
-
-      // Initialize collaboration for this file
-      collaborationService.initializeFile(
-        newActiveTab.fileId,
-        newActiveTab.content,
-        0,
+      setActiveTabIndex(tabIndex);
+      setTabs(prev =>
+        prev.map((tab, index) => ({
+          ...tab,
+          isActive: index === tabIndex,
+        }))
       );
-      socketService.requestFileSync(newActiveTab.fileId);
-    }
-  };
+
+      const newActiveTab = tabs[tabIndex];
+      if (editorRef.current && newActiveTab && monaco) {
+        console.log('📋 Switching editor model to:', newActiveTab.fileId);
+
+        // Get or create the model for this file
+        let model = monaco.editor.getModel(
+          monaco.Uri.parse(newActiveTab.fileId)
+        );
+        if (!model) {
+          model = monaco.editor.createModel(
+            newActiveTab.content,
+            newActiveTab.language,
+            monaco.Uri.parse(newActiveTab.fileId)
+          );
+        }
+
+        editorRef.current.setModel(model);
+
+        // Initialize collaboration for this file
+        collaborationService.initializeFile(
+          newActiveTab.fileId,
+          newActiveTab.content,
+          0
+        );
+
+        // Update collaborators display for current file
+        const currentFileCursors = new Map();
+        collaborationService.getUserCursors().forEach((cursor, userId) => {
+          if (cursor.fileId === newActiveTab.fileId) {
+            currentFileCursors.set(userId, cursor);
+          }
+        });
+        setCollaborators(currentFileCursors);
+        socketService.requestFileSync(newActiveTab.fileId);
+      }
+    },
+    [activeTabIndex, tabs, monaco]
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey) {
-        if (e.key === "s") {
+        if (e.key === 's') {
           e.preventDefault();
           if (activeTabIndex >= 0 && activeTabIndex < tabs.length) {
             handleSaveFile(activeTabIndex);
@@ -357,13 +389,13 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
         }
       }
     },
-    [activeTabIndex, tabs, handleSaveFile],
+    [activeTabIndex, tabs, handleSaveFile]
   );
 
   useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [handleKeyDown]);
 
@@ -372,24 +404,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
   useEffect(() => {
     if (!selectedFile) return;
     const existingTabIndex = tabs.findIndex(
-      (tab) => tab.fileId === selectedFile.fileId,
-    );
-    if (existingTabIndex >= 0) {
-      handleTabClick(existingTabIndex);
-    } else if (selectedFile.fileId) {
-      loadFileContent({
-        fileId: selectedFile.fileId,
-        name: selectedFile.name,
-        extension: selectedFile.extension,
-        path: selectedFile.path,
-      });
-    }
-  }, [selectedFile, handleTabClick, loadFileContent, tabs]);
-
-  useEffect(() => {
-    if (!selectedFile) return;
-    const existingTabIndex = tabs.findIndex(
-      (tab) => tab.fileId === selectedFile.fileId,
+      tab => tab.fileId === selectedFile.fileId
     );
     if (existingTabIndex >= 0) {
       handleTabClick(existingTabIndex);
@@ -409,11 +424,11 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
       <div className="flex bg-discord-sidebar border-b border-border overflow-x-auto">
         {tabs.map((tab, index) => (
           <div
-            key={tab.fileId}
+            key={`tab-${tab.fileId}-${index}`}
             className={`flex items-center gap-2 px-4 py-2 text-sm border-r border-border cursor-pointer transition-colors min-w-0 ${
               tab.isActive
-                ? "bg-discord-editor text-foreground"
-                : "bg-discord-sidebar text-muted-foreground hover:bg-discord-sidebar-hover"
+                ? 'bg-discord-editor text-foreground'
+                : 'bg-discord-sidebar text-muted-foreground hover:bg-discord-sidebar-hover'
             }`}
             onClick={() => handleTabClick(index)}
           >
@@ -427,7 +442,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
               variant="ghost"
               size="sm"
               className="w-4 h-4 p-0 hover:bg-discord-sidebar-hover"
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 handleCloseTab(index);
               }}
@@ -454,22 +469,29 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
                 <Users className="w-4 h-4 text-green-500" />
                 <span className="text-xs text-muted-foreground">
                   {collaborators.size} collaborator
-                  {collaborators.size > 1 ? "s" : ""}
+                  {collaborators.size > 1 ? 's' : ''}
                 </span>
                 <div className="flex gap-1">
                   {Array.from(collaborators.values())
                     .slice(0, 3)
-                    .map((cursor) => (
+                    .map(cursor => (
                       <Badge
                         key={cursor.userId}
                         variant="secondary"
-                        className="text-xs px-1 py-0 h-5"
+                        className={`text-xs px-1 py-0 h-5 transition-all ${
+                          cursor.isTyping ? 'animate-pulse border border-white/30' : ''
+                        }`}
                         style={{
-                          backgroundColor: cursor.color + "40",
+                          backgroundColor: cursor.color + '40',
                           color: cursor.color,
+                          borderColor: cursor.isTyping ? cursor.color : 'transparent',
                         }}
+                        title={cursor.isTyping ? `${cursor.userName} is typing...` : cursor.userName}
                       >
                         {cursor.userName.charAt(0).toUpperCase()}
+                        {cursor.isTyping && (
+                          <span className="ml-1 text-[8px]">●</span>
+                        )}
                       </Badge>
                     ))}
                   {collaborators.size > 3 && (
@@ -497,7 +519,9 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
                 variant="ghost"
                 size="sm"
                 className="w-8 h-8 p-0"
-                onClick={() => editorRef.current?.trigger("keyboard", "undo", null)}
+                onClick={() =>
+                  editorRef.current?.trigger('keyboard', 'undo', null)
+                }
               >
                 <Undo className="w-4 h-4" />
               </Button>
@@ -505,7 +529,9 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
                 variant="ghost"
                 size="sm"
                 className="w-8 h-8 p-0"
-                onClick={() => editorRef.current?.trigger("keyboard", "redo", null)}
+                onClick={() =>
+                  editorRef.current?.trigger('keyboard', 'redo', null)
+                }
               >
                 <Redo className="w-4 h-4" />
               </Button>
@@ -514,7 +540,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
                 size="sm"
                 className="w-8 h-8 p-0"
                 onClick={() =>
-                  editorRef.current?.trigger("keyboard", "actions.find", null)
+                  editorRef.current?.trigger('keyboard', 'actions.find', null)
                 }
               >
                 <Search className="w-4 h-4" />
@@ -536,23 +562,23 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
             language={activeTab.language}
             value={activeTab.content}
             onChange={handleEditorChange}
-            onMount={(editor) => {
-              console.log("🎬 Monaco Editor mounted for tab:", activeTab?.name);
+            onMount={editor => {
+              console.log('🎬 Monaco Editor mounted for tab:', activeTab?.name);
               editorRef.current = editor;
               collaborationService.setEditor(editor);
               if (activeTab && monaco) {
                 const model = monaco.editor.createModel(
                   activeTab.content,
                   activeTab.language,
-                  monaco.Uri.parse(activeTab.fileId),
+                  monaco.Uri.parse(activeTab.fileId)
                 );
                 editor.setModel(model);
 
-                console.log("📋 Initializing file:", activeTab.fileId);
+                console.log('📋 Initializing file:', activeTab.fileId);
                 collaborationService.initializeFile(
                   activeTab.fileId,
                   activeTab.content,
-                  0,
+                  0
                 );
                 socketService.requestFileSync(activeTab.fileId);
               }
@@ -562,21 +588,21 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
               minimap: { enabled: true },
               fontSize: 14,
               fontFamily: 'JetBrains Mono, Consolas, "Courier New", monospace',
-              wordWrap: "on",
+              wordWrap: 'on',
               automaticLayout: true,
               scrollBeyondLastLine: false,
-              renderWhitespace: "selection",
+              renderWhitespace: 'selection',
               tabSize: 2,
               insertSpaces: true,
               detectIndentation: true,
               formatOnPaste: true,
               formatOnType: true,
               suggestOnTriggerCharacters: true,
-              acceptSuggestionOnEnter: "on",
+              acceptSuggestionOnEnter: 'on',
               quickSuggestions: true,
               parameterHints: { enabled: true },
               folding: true,
-              lineNumbers: "on",
+              lineNumbers: 'on',
               glyphMargin: true,
               rulers: [80, 120],
               bracketPairColorization: { enabled: true },
@@ -603,3 +629,5 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
     </div>
   );
 };
+
+export default React.memo(MonacoEditor);

@@ -1,8 +1,8 @@
-import React from "react";
-import { Package, Download, Star, Zap } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
+import React from 'react';
+import { Package, Download, Star, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 
 interface ExtensionsPanelProps {
   isOpen: boolean;
@@ -16,16 +16,16 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({
   if (!isOpen) return null;
 
   const recommendedExtensions = [
-    { name: "Prettier", description: "Code formatter", installed: true },
-    { name: "ESLint", description: "JavaScript linter", installed: false },
+    { name: 'Prettier', description: 'Code formatter', installed: true },
+    { name: 'ESLint', description: 'JavaScript linter', installed: false },
     {
-      name: "Python",
-      description: "Python language support",
+      name: 'Python',
+      description: 'Python language support',
       installed: false,
     },
     {
-      name: "Live Share",
-      description: "Real-time collaboration",
+      name: 'Live Share',
+      description: 'Real-time collaboration',
       installed: true,
     },
   ];
@@ -57,7 +57,7 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({
             </div>
 
             {recommendedExtensions
-              .filter((ext) => ext.installed)
+              .filter(ext => ext.installed)
               .map((extension, index) => (
                 <div
                   key={index}
@@ -81,7 +81,7 @@ export const ExtensionsPanel: React.FC<ExtensionsPanelProps> = ({
             </div>
 
             {recommendedExtensions
-              .filter((ext) => !ext.installed)
+              .filter(ext => !ext.installed)
               .map((extension, index) => (
                 <div
                   key={index}

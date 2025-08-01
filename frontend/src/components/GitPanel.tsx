@@ -1,8 +1,8 @@
-import React from "react";
-import { GitBranch, GitCommit, GitMerge, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
+import React from 'react';
+import { GitBranch, GitCommit, GitMerge, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 
 interface GitPanelProps {
   isOpen: boolean;

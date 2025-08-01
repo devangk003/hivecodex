@@ -1,19 +1,19 @@
-import React, { useState, useCallback } from "react";
-import { Upload, Download, Plus, RefreshCw, X } from "lucide-react";
-import { ZipUploadIcon } from "./ui/ZipUploadIcon";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Progress } from "@/components/ui/progress";
-import { VSCodeFileExplorer } from "./VSCodeFileExplorer";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useDropzone } from "react-dropzone";
-import { toast } from "sonner";
-import { fileAPI, FileItem } from "@/lib/api";
+import React, { useState, useCallback } from 'react';
+import { Upload, Download, Plus, RefreshCw, X } from 'lucide-react';
+import { ZipUploadIcon } from './ui/ZipUploadIcon';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Progress } from '@/components/ui/progress';
+import { VSCodeFileExplorer } from './VSCodeFileExplorer';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useDropzone } from 'react-dropzone';
+import { toast } from 'sonner';
+import { fileAPI, FileItem } from '@/lib/api';
 
 interface FileTreeItem {
   id: string;
   name: string;
-  type: "file" | "folder";
+  type: 'file' | 'folder';
   path: string;
   size?: number;
   content?: string;
@@ -30,7 +30,7 @@ interface FileTreeItem {
 interface UploadProgress {
   fileName: string;
   progress: number;
-  status: "uploading" | "success" | "error";
+  status: 'uploading' | 'success' | 'error';
 }
 
 interface ExplorerPanelProps {
@@ -54,7 +54,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["files", roomId],
+    queryKey: ['files', roomId],
     queryFn: () => fileAPI.getRoomFiles(roomId),
     enabled: roomId && isOpen,
     refetchOnWindowFocus: false,
@@ -83,12 +83,12 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     mutationFn: ({ file, roomId }: { file: File; roomId: string }) =>
       fileAPI.uploadFile(roomId, file),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["files", roomId] });
-      toast.success("File uploaded successfully");
+      queryClient.invalidateQueries({ queryKey: ['files', roomId] });
+      toast.success('File uploaded successfully');
     },
-    onError: (error) => {
-      console.error("Upload error:", error);
-      toast.error("Failed to upload file");
+    onError: error => {
+      console.error('Upload error:', error);
+      toast.error('Failed to upload file');
     },
   });
 
@@ -96,44 +96,54 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   const deleteMutation = useMutation({
     mutationFn: (fileId: string) => fileAPI.deleteFile(roomId, fileId),
     onSuccess: () => {
-      console.log("File/folder deleted successfully, invalidating queries");
-      queryClient.invalidateQueries({ queryKey: ["files", roomId] });
-      queryClient.refetchQueries({ queryKey: ["files", roomId] });
-      toast.success("File or folder deleted successfully");
+      console.log('File/folder deleted successfully, invalidating queries');
+      queryClient.invalidateQueries({ queryKey: ['files', roomId] });
+      queryClient.refetchQueries({ queryKey: ['files', roomId] });
+      toast.success('File or folder deleted successfully');
     },
     onError: (error: unknown) => {
-      console.error("Delete error:", error);
+      console.error('Delete error:', error);
       if (
-        typeof error === "object" &&
+        typeof error === 'object' &&
         error !== null &&
-        "response" in error &&
-        typeof (error as { response?: { status?: number; data?: { message?: string } } }).response?.status === "number"
+        'response' in error &&
+        typeof (
+          error as {
+            response?: { status?: number; data?: { message?: string } };
+          }
+        ).response?.status === 'number'
       ) {
-        const response = (error as { response: { status: number; data?: { message?: string } } }).response;
+        const response = (
+          error as { response: { status: number; data?: { message?: string } } }
+        ).response;
         if (response.status === 403) {
-          toast.error("Authentication failed. Please login again.");
+          toast.error('Authentication failed. Please login again.');
         } else if (response.status === 404) {
-          toast.error("File/folder not found or already deleted");
-          queryClient.invalidateQueries({ queryKey: ["files", roomId] });
+          toast.error('File/folder not found or already deleted');
+          queryClient.invalidateQueries({ queryKey: ['files', roomId] });
         } else {
           toast.error(
-            "Failed to delete file/folder: " +
-              (response.data?.message || "Unknown error"),
+            'Failed to delete file/folder: ' +
+              (response.data?.message || 'Unknown error')
           );
         }
       } else {
-        toast.error("Failed to delete file/folder: Unknown error");
+        toast.error('Failed to delete file/folder: Unknown error');
       }
     },
   });
 
   // Convert flat array to nested tree using parentId
   // Accepts an array of FileItem or backend file objects and builds a nested file tree.
-  type BackendFile = FileItem & { _id?: string; parentId?: string; type?: string };
+  type BackendFile = FileItem & {
+    _id?: string;
+    parentId?: string;
+    type?: string;
+  };
   const buildFileTree = (flatFiles: BackendFile[]): FileTreeItem[] => {
     const idMap: Record<string, FileTreeItem> = {};
     const roots: FileTreeItem[] = [];
-    flatFiles.forEach((file) => {
+    flatFiles.forEach(file => {
       // Support both backend and frontend file shapes
       const id = (file._id ?? file.fileId)?.toString();
       const parentId = file.parentId ? file.parentId.toString() : null;
@@ -141,7 +151,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
       idMap[id] = {
         id,
         name: file.name,
-        type: ((file as { type?: string }).type === "folder" ? "folder" : "file"),
+        type: (file as { type?: string }).type === 'folder' ? 'folder' : 'file',
         path: file.name,
         size: file.lines ? file.lines * 50 : 0,
         fileId: file.fileId,
@@ -153,8 +163,8 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
       };
     });
     // Build tree
-    Object.values(idMap).forEach((item) => {
-      if (item.type === "folder" && !item.children) item.children = [];
+    Object.values(idMap).forEach(item => {
+      if (item.type === 'folder' && !item.children) item.children = [];
       if (item.parentId && idMap[item.parentId]) {
         idMap[item.parentId].children = idMap[item.parentId].children || [];
         idMap[item.parentId].children.push(item);
@@ -163,7 +173,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
       }
     });
     // Only return root-level items
-    return roots.filter((item) => !item.parentId);
+    return roots.filter(item => !item.parentId);
   };
 
   // Build the file tree from backend files
@@ -175,45 +185,51 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
       // If any file has a webkitRelativePath or _relativePath with a slash, treat as folder upload
       if (
         acceptedFiles.some(
-          (f) =>
-            (typeof (f as File & { webkitRelativePath?: string }).webkitRelativePath === 'string' &&
-              (f as File & { webkitRelativePath?: string }).webkitRelativePath.includes("/")) ||
-            (typeof (f as File & { _relativePath?: string })._relativePath === 'string' &&
-              (f as File & { _relativePath?: string })._relativePath.includes("/")),
+          f =>
+            (typeof (f as File & { webkitRelativePath?: string })
+              .webkitRelativePath === 'string' &&
+              (
+                f as File & { webkitRelativePath?: string }
+              ).webkitRelativePath.includes('/')) ||
+            (typeof (f as File & { _relativePath?: string })._relativePath ===
+              'string' &&
+              (f as File & { _relativePath?: string })._relativePath.includes(
+                '/'
+              ))
         )
       ) {
         fileAPI
           .uploadFolder(roomId, acceptedFiles)
           .then(() => {
-            queryClient.invalidateQueries({ queryKey: ["files", roomId] });
-            toast.success("Folder uploaded successfully");
+            queryClient.invalidateQueries({ queryKey: ['files', roomId] });
+            toast.success('Folder uploaded successfully');
           })
-          .catch((error) => {
-            toast.error("Failed to upload folder");
-            console.error("Folder upload error:", error);
+          .catch(error => {
+            toast.error('Failed to upload folder');
+            console.error('Folder upload error:', error);
           });
       } else {
-        acceptedFiles.forEach((file) => {
+        acceptedFiles.forEach(file => {
           uploadMutation.mutate({ file, roomId });
         });
       }
     },
-    [roomId, uploadMutation, queryClient],
+    [roomId, uploadMutation, queryClient]
   );
 
   // Handle file deletion
   const handleFileDelete = useCallback(
     (fileId: string) => {
-      console.log("Deleting file with ID:", fileId);
+      console.log('Deleting file with ID:', fileId);
       deleteMutation.mutate(fileId);
     },
-    [deleteMutation],
+    [deleteMutation]
   );
 
   // Handle ZIP upload
   const handleZipUpload = useCallback((extractedFiles: FileTreeItem[]) => {
-    console.log("ZIP upload not implemented yet:", extractedFiles);
-    toast.info("ZIP upload feature coming soon!");
+    console.log('ZIP upload not implemented yet:', extractedFiles);
+    toast.info('ZIP upload feature coming soon!');
   }, []);
 
   // Dropzone configuration (supports folder upload)
@@ -229,7 +245,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
 
   // Handle file/folder selection from explorer
   const handleFileSelectInternal = (item: FileTreeItem) => {
-    if (item.type === "folder") {
+    if (item.type === 'folder') {
       setSelectedFolder(item.id);
     } else {
       setSelectedFolder(item.parentId || null);
@@ -241,8 +257,8 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
 
   // Provide a refresh callback to child explorer for drag-and-drop move
   const handleExplorerRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["files", roomId] });
-    queryClient.refetchQueries({ queryKey: ["files", roomId] });
+    queryClient.invalidateQueries({ queryKey: ['files', roomId] });
+    queryClient.refetchQueries({ queryKey: ['files', roomId] });
   };
 
   return (
@@ -258,7 +274,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
             variant="ghost"
             size="sm"
             className="h-6 w-6 p-0 hover:bg-discord-sidebar-hover"
-            onClick={() => document.getElementById("file-upload-zip")?.click()}
+            onClick={() => document.getElementById('file-upload-zip')?.click()}
             title="Upload ZIP"
           >
             <ZipUploadIcon className="h-4 w-4" />
@@ -268,9 +284,9 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
             id="file-upload-zip"
             type="file"
             accept=".zip"
-            onChange={async (e) => {
+            onChange={async e => {
               if (e.target.files && e.target.files[0]) {
-                const JSZip = (await import("jszip")).default;
+                const JSZip = (await import('jszip')).default;
                 const zip = new JSZip();
                 const file = e.target.files[0];
                 const loaded = await zip.loadAsync(file);
@@ -279,19 +295,20 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
                 loaded.forEach((relativePath, zipEntry) => {
                   if (!zipEntry.dir) {
                     promises.push(
-                      zipEntry.async("blob").then((blob) => {
+                      zipEntry.async('blob').then(blob => {
                         const f = new File([blob], relativePath);
                         // Use a custom property for relative path from zip
-                        (f as File & { _relativePath?: string })._relativePath = relativePath;
+                        (f as File & { _relativePath?: string })._relativePath =
+                          relativePath;
                         files.push(f);
-                      }),
+                      })
                     );
                   }
                 });
                 await Promise.all(promises);
                 handleDrop(files);
               }
-              e.target.value = "";
+              e.target.value = '';
             }}
             className="hidden"
           />
@@ -303,7 +320,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
             disabled={isLoading || isRefreshing}
           >
             <RefreshCw
-              className={`h-3 w-3 ${isLoading || isRefreshing ? "animate-spin" : ""}`}
+              className={`h-3 w-3 ${isLoading || isRefreshing ? 'animate-spin' : ''}`}
             />
           </Button>
           {/* Unified file/folder upload button */}
@@ -312,7 +329,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
             size="sm"
             className="h-6 w-6 p-0 hover:bg-discord-sidebar-hover"
             onClick={() =>
-              document.getElementById("file-upload-unified")?.click()
+              document.getElementById('file-upload-unified')?.click()
             }
             title="Upload Files or Folder"
           >
@@ -327,11 +344,11 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
         type="file"
         multiple
         // Folder upload is supported in Chromium browsers via webkitdirectory, but TS does not recognize it. You may add it via ref if needed.
-        onChange={(e) => {
+        onChange={e => {
           if (e.target.files) {
             handleDrop(Array.from(e.target.files));
           }
-          e.target.value = "";
+          e.target.value = '';
         }}
         className="hidden"
       />
@@ -342,16 +359,16 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
           size="sm"
           className="h-6 px-2"
           onClick={() => {
-            const name = prompt("Enter new file name:");
+            const name = prompt('Enter new file name:');
             if (!name) return;
             // Create file in selected folder (or root)
             fileAPI
               .createFile(roomId, name, selectedFolder)
               .then(() => {
-                queryClient.invalidateQueries({ queryKey: ["files", roomId] });
-                toast.success("File created");
+                queryClient.invalidateQueries({ queryKey: ['files', roomId] });
+                toast.success('File created');
               })
-              .catch(() => toast.error("Failed to create file"));
+              .catch(() => toast.error('Failed to create file'));
           }}
         >
           Create File
@@ -361,23 +378,23 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
           size="sm"
           className="h-6 px-2"
           onClick={() => {
-            const name = prompt("Enter new folder name:");
+            const name = prompt('Enter new folder name:');
             if (!name) return;
             // Create folder in selected folder (or root)
             fileAPI
               .createFolder(roomId, name, selectedFolder)
               .then(() => {
-                queryClient.invalidateQueries({ queryKey: ["files", roomId] });
-                toast.success("Folder created");
+                queryClient.invalidateQueries({ queryKey: ['files', roomId] });
+                toast.success('Folder created');
               })
-              .catch(() => toast.error("Failed to create folder"));
+              .catch(() => toast.error('Failed to create folder'));
           }}
         >
           Create Folder
         </Button>
         {selectedFolder && (
           <span className="ml-2 text-xs text-muted-foreground">
-            In: {fileTree.find((f) => f.id === selectedFolder)?.name || "..."}
+            In: {fileTree.find(f => f.id === selectedFolder)?.name || '...'}
           </span>
         )}
       </div>
@@ -385,8 +402,8 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
       {/* Drag and Drop Area */}
       <div
         {...getRootProps()}
-        className={`flex-1 relative overflow-hidden ${isDragActive ? "bg-discord-primary/10 border-2 border-dashed border-discord-primary" : ""}`}
-        onClick={(e) => {
+        className={`flex-1 relative overflow-hidden ${isDragActive ? 'bg-discord-primary/10 border-2 border-dashed border-discord-primary' : ''}`}
+        onClick={e => {
           // Prevent dropzone click when clicking on file items
           e.stopPropagation();
         }}
@@ -437,7 +454,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
             </div>
           ) : (
             <div
-              onClick={(e) => {
+              onClick={e => {
                 // Allow file selection clicks to pass through
                 e.stopPropagation();
               }}

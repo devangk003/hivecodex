@@ -1,22 +1,22 @@
-import React, { useState, useRef } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Avatar } from "@/components/ui/avatar";
-import { useAuth } from "@/contexts/AuthContext";
-import { authAPI } from "@/lib/api";
+import React, { useState, useRef } from 'react';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Avatar } from '@/components/ui/avatar';
+import { useAuth } from '@/contexts/AuthContext';
+import { authAPI } from '@/lib/api';
 
 // Only include tabs/features relevant to your app
 const TABS = [
-  { key: "general", label: "General", icon: "gear" },
-  { key: "profile", label: "Account", icon: "avatar" },
-  { key: "preferences", label: "Preferences", icon: "sliders" },
-  { key: "notifications", label: "Notifications", icon: "bell" },
-  { key: "connections", label: "Connections", icon: "arrowUpRightSquare" },
-  { key: "people", label: "People", icon: "people" },
-  { key: "teamspaces", label: "Teamspaces", icon: "teamspace" },
-  { key: "import", label: "Import", icon: "arrowLineDown" },
-  { key: "danger", label: "Danger zone", icon: "alert" },
-  { key: "setup", label: "Setup info", icon: "info" },
+  { key: 'general', label: 'General', icon: 'gear' },
+  { key: 'profile', label: 'Account', icon: 'avatar' },
+  { key: 'preferences', label: 'Preferences', icon: 'sliders' },
+  { key: 'notifications', label: 'Notifications', icon: 'bell' },
+  { key: 'connections', label: 'Connections', icon: 'arrowUpRightSquare' },
+  { key: 'people', label: 'People', icon: 'people' },
+  { key: 'teamspaces', label: 'Teamspaces', icon: 'teamspace' },
+  { key: 'import', label: 'Import', icon: 'arrowLineDown' },
+  { key: 'danger', label: 'Danger zone', icon: 'alert' },
+  { key: 'setup', label: 'Setup info', icon: 'info' },
 ];
 
 const SettingsModal = ({
@@ -27,10 +27,10 @@ const SettingsModal = ({
   onClose: () => void;
 }) => {
   const { user, setUser } = useAuth();
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState('general');
   // Form state
-  const [name, setName] = useState(user?.name || "");
-  const [email, setEmail] = useState(user?.email || "");
+  const [name, setName] = useState(user?.name || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [profilePic, setProfilePic] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -41,8 +41,8 @@ const SettingsModal = ({
   // Reset form when modal opens
   React.useEffect(() => {
     if (open && user) {
-      setName(user.name || "");
-      setEmail(user.email || "");
+      setName(user.name || '');
+      setEmail(user.email || '');
       setProfilePic(null);
       setPreviewUrl(null);
       setSuccess(false);
@@ -69,19 +69,19 @@ const SettingsModal = ({
       setSuccess(true);
       // Update user in context/localStorage
       if (setUser) {
-        setUser((prev) => ({
+        setUser(prev => ({
           ...prev!,
           name: data.name,
           email: data.email,
           profilePicId: data.profilePicId,
         }));
-        const storedUser = localStorage.getItem("user");
-        if (storedUser && storedUser !== "undefined") {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser && storedUser !== 'undefined') {
           const parsed = JSON.parse(storedUser);
           parsed.name = data.name;
           parsed.email = data.email;
           parsed.profilePicId = data.profilePicId;
-          localStorage.setItem("user", JSON.stringify(parsed));
+          localStorage.setItem('user', JSON.stringify(parsed));
         }
       }
     } catch (err: unknown) {
@@ -94,14 +94,14 @@ const SettingsModal = ({
       }
       const apiError = err as APIError;
       if (
-        typeof err === "object" &&
+        typeof err === 'object' &&
         err !== null &&
-        "response" in err &&
+        'response' in err &&
         apiError.response?.data?.message
       ) {
         setError(apiError.response.data.message);
       } else {
-        setError("Failed to update profile");
+        setError('Failed to update profile');
       }
     } finally {
       setLoading(false);
@@ -123,10 +123,10 @@ const SettingsModal = ({
         {/* Sidebar */}
         <div className="h-full bg-[#202020] w-60 flex flex-col justify-between overflow-y-auto border-r border-white/10">
           <div className="flex flex-col gap-2 p-3">
-            {TABS.map((tab) => (
+            {TABS.map(tab => (
               <button
                 key={tab.key}
-                className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors text-left ${activeTab === tab.key ? "bg-white/10 font-semibold" : "hover:bg-white/5"}`}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors text-left ${activeTab === tab.key ? 'bg-white/10 font-semibold' : 'hover:bg-white/5'}`}
                 onClick={() => setActiveTab(tab.key)}
                 aria-selected={activeTab === tab.key}
                 role="tab"
@@ -140,7 +140,7 @@ const SettingsModal = ({
         </div>
         {/* Main panel */}
         <div className="flex-1 flex flex-col h-full overflow-y-auto p-10">
-          {activeTab === "general" && (
+          {activeTab === 'general' && (
             <div>
               {/* Use DialogTitle and DialogDescription visually hidden for a11y, or visually if desired */}
               <div
@@ -162,7 +162,7 @@ const SettingsModal = ({
                   placeholder="e.g. company name"
                   maxLength={65}
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={e => setName(e.target.value)}
                   disabled={loading}
                   aria-labelledby="settings-modal-title-real"
                   aria-describedby="settings-modal-desc-real"
@@ -178,7 +178,7 @@ const SettingsModal = ({
                   placeholder="your@email.com"
                   maxLength={100}
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={e => setEmail(e.target.value)}
                   disabled={loading}
                 />
               </div>
@@ -195,7 +195,7 @@ const SettingsModal = ({
                       />
                     ) : (
                       <span className="flex h-full w-full items-center justify-center text-3xl text-white/50">
-                        {user?.name?.[0]?.toUpperCase() || "D"}
+                        {user?.name?.[0]?.toUpperCase() || 'D'}
                       </span>
                     )}
                   </Avatar>
@@ -203,7 +203,7 @@ const SettingsModal = ({
                     type="file"
                     accept="image/*"
                     ref={fileInputRef}
-                    style={{ display: "none" }}
+                    style={{ display: 'none' }}
                     onChange={handleProfilePicChange}
                   />
                   <Button
@@ -235,7 +235,7 @@ const SettingsModal = ({
                   onClick={handleUpdate}
                   disabled={loading}
                 >
-                  {loading ? "Updating..." : "Update"}
+                  {loading ? 'Updating...' : 'Update'}
                 </Button>
                 <Button variant="outline" onClick={onClose} disabled={loading}>
                   Cancel

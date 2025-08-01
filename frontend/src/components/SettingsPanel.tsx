@@ -1,13 +1,13 @@
-import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import React, { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 
 export const SettingsPanel: React.FC = () => {
   const [showDeleteProfile, setShowDeleteProfile] = useState(false);
@@ -17,12 +17,12 @@ export const SettingsPanel: React.FC = () => {
   const [showEditProfile, setShowEditProfile] = useState(false);
 
   // Form states
-  const [username, setUsername] = useState("");
-  const [name, setName] = useState("");
+  const [username, setUsername] = useState('');
+  const [name, setName] = useState('');
   const [profilePic, setProfilePic] = useState<File | null>(null);
-  const [oldPassword, setOldPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   // TODO: Wire up API calls for each action
 
@@ -79,7 +79,7 @@ export const SettingsPanel: React.FC = () => {
               <Input
                 id="username"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={e => setUsername(e.target.value)}
               />
             </div>
             <div>
@@ -87,7 +87,7 @@ export const SettingsPanel: React.FC = () => {
               <Input
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={e => setName(e.target.value)}
               />
             </div>
             <Button className="w-full">Save Changes</Button>
@@ -105,7 +105,7 @@ export const SettingsPanel: React.FC = () => {
             <Input
               type="file"
               accept="image/*"
-              onChange={(e) => setProfilePic(e.target.files?.[0] || null)}
+              onChange={e => setProfilePic(e.target.files?.[0] || null)}
             />
             <Button className="w-full">Upload</Button>
           </div>
@@ -125,7 +125,7 @@ export const SettingsPanel: React.FC = () => {
                 id="oldPassword"
                 type="password"
                 value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
+                onChange={e => setOldPassword(e.target.value)}
               />
             </div>
             <div>
@@ -134,7 +134,7 @@ export const SettingsPanel: React.FC = () => {
                 id="newPassword"
                 type="password"
                 value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
+                onChange={e => setNewPassword(e.target.value)}
               />
             </div>
             <div>
@@ -143,7 +143,7 @@ export const SettingsPanel: React.FC = () => {
                 id="confirmPassword"
                 type="password"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                onChange={e => setConfirmPassword(e.target.value)}
               />
             </div>
             <Button className="w-full">Change Password</Button>

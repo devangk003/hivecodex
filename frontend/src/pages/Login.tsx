@@ -1,27 +1,28 @@
-import React, { useState, ChangeEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import React, { useState, ChangeEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
+} from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { getErrorMessage } from '@/utils';
 
 const Login: React.FC = () => {
   const [formData, setFormData] = useState({
-    email: "",
-    password: "",
+    email: '',
+    password: '',
     rememberMe: false,
   });
-  const [error, setError] = useState<string>("");
-  const [success, setSuccess] = useState<string>("");
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -30,37 +31,35 @@ const Login: React.FC = () => {
     const { name, value, type, checked } = e.target;
     setFormData({
       ...formData,
-      [name]: type === "checkbox" ? checked : value,
+      [name]: type === 'checkbox' ? checked : value,
     });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
+    setError('');
+    setSuccess('');
     setIsLoading(true);
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      setError("Please enter a valid email address.");
+      setError('Please enter a valid email address.');
       setIsLoading(false);
       return;
     }
 
     if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+      setError('Password must be at least 8 characters long.');
       setIsLoading(false);
       return;
     }
 
     try {
       await login(formData.email, formData.password);
-      setSuccess("Login successful! Redirecting to dashboard...");
+      setSuccess('Login successful! Redirecting to dashboard...');
       // Navigate immediately after successful login
-      navigate("/");
-    } catch (error: any) {
-      setError(
-        error.message || "An error occurred during login. Please try again.",
-      );
+      navigate('/');
+    } catch (error: unknown) {
+      setError(getErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
@@ -137,7 +136,7 @@ const Login: React.FC = () => {
                   Signing in...
                 </>
               ) : (
-                "Sign In"
+                'Sign In'
               )}
             </Button>
           </form>
@@ -150,7 +149,7 @@ const Login: React.FC = () => {
               Forgot your password?
             </Link>
             <div className="text-sm text-muted-foreground">
-              Don't have an account?{" "}
+              Don't have an account?{' '}
               <Link to="/register" className="text-primary hover:underline">
                 Sign up
               </Link>

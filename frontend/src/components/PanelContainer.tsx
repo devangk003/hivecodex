@@ -1,13 +1,13 @@
-import React from "react";
-import { ExplorerPanel } from "./ExplorerPanel";
-import { SearchPanel } from "./SearchPanel";
-import { GitPanel } from "./GitPanel";
-import { ExtensionsPanel } from "./ExtensionsPanel";
+import React from 'react';
+import { ExplorerPanel } from './ExplorerPanel';
+import { SearchPanel } from './SearchPanel';
+import { GitPanel } from './GitPanel';
+import { ExtensionsPanel } from './ExtensionsPanel';
 
 interface FileTreeItem {
   id: string;
   name: string;
-  type: "file" | "folder";
+  type: 'file' | 'folder';
   path: string;
   size?: number;
   content?: string;
@@ -35,7 +35,7 @@ export const PanelContainer: React.FC<PanelContainerProps> = ({
 }) => {
   const renderPanel = () => {
     switch (activeView) {
-      case "files":
+      case 'files':
         return (
           <ExplorerPanel
             onFileSelect={onFileSelect}
@@ -43,11 +43,11 @@ export const PanelContainer: React.FC<PanelContainerProps> = ({
             isOpen={isOpen}
           />
         );
-      case "search":
+      case 'search':
         return <SearchPanel isOpen={isOpen} roomId={roomId} />;
-      case "git":
+      case 'git':
         return <GitPanel isOpen={isOpen} roomId={roomId} />;
-      case "extensions":
+      case 'extensions':
         return <ExtensionsPanel isOpen={isOpen} roomId={roomId} />;
       default:
         return (

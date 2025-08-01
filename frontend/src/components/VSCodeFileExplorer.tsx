@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from 'react';
 import {
   File,
   Folder,
@@ -11,17 +11,17 @@ import {
   Plus,
   Download,
   AlertTriangle,
-} from "lucide-react";
-import { ZipUploadIcon } from "./ui/ZipUploadIcon";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { useDropzone } from "react-dropzone";
-import { toast } from "sonner";
+} from 'lucide-react';
+import { ZipUploadIcon } from './ui/ZipUploadIcon';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useDropzone } from 'react-dropzone';
+import { toast } from 'sonner';
 
 interface FileTreeItem {
   id: string;
   name: string;
-  type: "file" | "folder";
+  type: 'file' | 'folder';
   path: string;
   size?: number;
   content?: string;
@@ -45,7 +45,7 @@ interface VSCodeFileExplorerProps {
 }
 
 const getFileIcon = (item: FileTreeItem) => {
-  if (item.type === "folder") {
+  if (item.type === 'folder') {
     return item.isExpanded ? (
       <FolderOpen className="w-4 h-4 text-blue-400" />
     ) : (
@@ -54,18 +54,18 @@ const getFileIcon = (item: FileTreeItem) => {
   }
 
   switch (item.extension) {
-    case "py":
+    case 'py':
       return <File className="w-4 h-4 text-blue-400" />;
-    case "js":
+    case 'js':
       return <File className="w-4 h-4 text-yellow-400" />;
-    case "tsx":
-    case "ts":
+    case 'tsx':
+    case 'ts':
       return <File className="w-4 h-4 text-blue-300" />;
-    case "env":
+    case 'env':
       return <File className="w-4 h-4 text-green-400" />;
-    case "json":
+    case 'json':
       return <File className="w-4 h-4 text-orange-400" />;
-    case "md":
+    case 'md':
       return <File className="w-4 h-4 text-purple-400" />;
     default:
       return <FileText className="w-4 h-4 text-muted-foreground" />;
@@ -93,7 +93,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleClick = () => {
-    if (item.type === "folder") {
+    if (item.type === 'folder') {
       setIsExpanded(!isExpanded);
     } else {
       onSelect(item);
@@ -111,11 +111,11 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   // Drag-and-drop move logic
   const handleDragStart = (e: React.DragEvent) => {
     e.stopPropagation();
-    e.dataTransfer.setData("application/x-hivecodex-id", item.id);
-    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData('application/x-hivecodex-id', item.id);
+    e.dataTransfer.effectAllowed = 'move';
   };
   const handleDragOver = (e: React.DragEvent) => {
-    if (item.type === "folder") {
+    if (item.type === 'folder') {
       e.preventDefault();
       setIsDragOver(true);
     }
@@ -126,23 +126,23 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
   const handleDrop = async (e: React.DragEvent) => {
     setIsDragOver(false);
     e.preventDefault();
-    const draggedId = e.dataTransfer.getData("application/x-hivecodex-id");
-    if (draggedId && draggedId !== item.id && item.type === "folder") {
+    const draggedId = e.dataTransfer.getData('application/x-hivecodex-id');
+    if (draggedId && draggedId !== item.id && item.type === 'folder') {
       try {
-        const api = await import("@/lib/api");
-        const roomId = window.location.pathname.split("/").pop();
+        const api = await import('@/lib/api');
+        const roomId = window.location.pathname.split('/').pop();
         await api.fileAPI.moveFileOrFolder(roomId, draggedId, item.id);
-        if (typeof onMove === "function") onMove();
+        if (typeof onMove === 'function') onMove();
       } catch (err) {
-        toast.error("Failed to move item");
+        toast.error('Failed to move item');
       }
     } else if (
       e.dataTransfer.files &&
       e.dataTransfer.files.length > 0 &&
-      item.type === "folder"
+      item.type === 'folder'
     ) {
       // Upload files to this folder
-      if (typeof onFileUpload === "function") {
+      if (typeof onFileUpload === 'function') {
         onFileUpload(Array.from(e.dataTransfer.files), item.id);
       }
     }
@@ -153,9 +153,9 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
       <div
         className={`flex items-center gap-2 py-1 px-2 hover:bg-discord-sidebar-hover rounded-sm cursor-pointer text-sm transition-colors group min-w-0 ${
           item.isSelected
-            ? "bg-discord-primary/20 text-discord-primary"
-            : "text-foreground"
-        } ${isDragOver ? "bg-discord-primary/10 border border-discord-primary" : ""}`}
+            ? 'bg-discord-primary/20 text-discord-primary'
+            : 'text-foreground'
+        } ${isDragOver ? 'bg-discord-primary/10 border border-discord-primary' : ''}`}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={handleClick}
         draggable
@@ -164,7 +164,7 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {item.type === "folder" && (
+        {item.type === 'folder' && (
           <div className="w-4 h-4 flex items-center justify-center flex-shrink-0">
             {isExpanded ? (
               <ChevronDown className="w-3 h-3" />
@@ -185,12 +185,12 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
           </div>
         )}
         <span
-          className={`flex-1 truncate min-w-0 ${item.isCorrupted ? "text-yellow-500" : ""}`}
+          className={`flex-1 truncate min-w-0 ${item.isCorrupted ? 'text-yellow-500' : ''}`}
           title={item.name}
         >
           {item.name}
         </span>
-        {(item.type === "file" || item.type === "folder") && (
+        {(item.type === 'file' || item.type === 'folder') && (
           <Button
             variant="ghost"
             size="sm"
@@ -202,9 +202,9 @@ const FileTreeItem: React.FC<FileTreeItemProps> = ({
           </Button>
         )}
       </div>
-      {item.type === "folder" && isExpanded && item.children && (
+      {item.type === 'folder' && isExpanded && item.children && (
         <div>
-          {item.children.map((child) => (
+          {item.children.map(child => (
             <FileTreeItem
               key={child.id}
               item={child}
@@ -241,16 +241,16 @@ export const VSCodeFileExplorer: React.FC<VSCodeFileExplorerProps> = ({
   const handleExplorerDrop = async (e: React.DragEvent) => {
     if (e.target !== explorerRef.current) return;
     e.preventDefault();
-    const draggedId = e.dataTransfer.getData("application/x-hivecodex-id");
+    const draggedId = e.dataTransfer.getData('application/x-hivecodex-id');
     if (draggedId) {
       // Internal move to root
       try {
-        const api = await import("@/lib/api");
-        const roomId = window.location.pathname.split("/").pop();
+        const api = await import('@/lib/api');
+        const roomId = window.location.pathname.split('/').pop();
         await api.fileAPI.moveFileOrFolder(roomId, draggedId, undefined);
-        if (typeof onMove === "function") onMove();
+        if (typeof onMove === 'function') onMove();
       } catch (err) {
-        toast.error("Failed to move item");
+        toast.error('Failed to move item');
       }
     } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       // Upload to root
@@ -263,25 +263,28 @@ export const VSCodeFileExplorer: React.FC<VSCodeFileExplorerProps> = ({
       // If any file has a webkitRelativePath with a slash, treat as folder upload
       if (
         acceptedFiles.some(
-          (f) =>
-          (typeof (f as File & { webkitRelativePath?: string }).webkitRelativePath === 'string' &&
-            (f as File & { webkitRelativePath?: string }).webkitRelativePath.includes("/")),
+          f =>
+            typeof (f as File & { webkitRelativePath?: string })
+              .webkitRelativePath === 'string' &&
+            (
+              f as File & { webkitRelativePath?: string }
+            ).webkitRelativePath.includes('/')
         )
       ) {
         // Use the uploadFolder API from lib/api.ts
-        import("@/lib/api").then((apiModule) => {
-          const roomId = window.location.pathname.split("/").pop();
+        import('@/lib/api').then(apiModule => {
+          const roomId = window.location.pathname.split('/').pop();
           if (roomId) {
             apiModule.fileAPI.uploadFolder(roomId, acceptedFiles);
           } else {
-            toast.error("Room ID not found in URL.");
+            toast.error('Room ID not found in URL.');
           }
         });
       } else {
         onFileUpload(acceptedFiles);
       }
     },
-    [onFileUpload],
+    [onFileUpload]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -289,20 +292,20 @@ export const VSCodeFileExplorer: React.FC<VSCodeFileExplorerProps> = ({
     noClick: false, // allow click
     noKeyboard: false,
     accept: {
-      "text/*": [
-        ".txt",
-        ".js",
-        ".ts",
-        ".tsx",
-        ".py",
-        ".json",
-        ".md",
-        ".html",
-        ".css",
+      'text/*': [
+        '.txt',
+        '.js',
+        '.ts',
+        '.tsx',
+        '.py',
+        '.json',
+        '.md',
+        '.html',
+        '.css',
       ],
-      "application/javascript": [".js"],
-      "application/json": [".json"],
-      "application/zip": [".zip"],
+      'application/javascript': ['.js'],
+      'application/json': ['.json'],
+      'application/zip': ['.zip'],
     },
     multiple: true,
   });
@@ -311,14 +314,14 @@ export const VSCodeFileExplorer: React.FC<VSCodeFileExplorerProps> = ({
     (file: FileTreeItem) => {
       onFileSelect(file);
     },
-    [onFileSelect],
+    [onFileSelect]
   );
 
   const handleFileDelete = useCallback(
     (fileId: string) => {
       onFileDelete(fileId);
     },
-    [onFileDelete],
+    [onFileDelete]
   );
 
   // Unified explorer drop zone for move-to-root and upload
@@ -328,15 +331,15 @@ export const VSCodeFileExplorer: React.FC<VSCodeFileExplorerProps> = ({
       className="relative min-h-[200px]"
       onDragOver={handleExplorerDragOver}
       onDrop={handleExplorerDrop}
-      style={{ outline: isDragActive ? "2px dashed #5865f2" : undefined }}
+      style={{ outline: isDragActive ? '2px dashed #5865f2' : undefined }}
     >
       {/* Hidden input for drag-and-drop only, not click */}
-      <input {...getInputProps()} style={{ display: "none" }} />
+      <input {...getInputProps()} style={{ display: 'none' }} />
       <div className="border-b border-discord-border px-2 py-1 text-xs text-muted-foreground select-none">
         Root
       </div>
       <div className="p-2">
-        {files.map((file) => (
+        {files.map(file => (
           <FileTreeItem
             key={file.id}
             item={file}
@@ -362,7 +365,7 @@ export const VSCodeFileExplorer: React.FC<VSCodeFileExplorerProps> = ({
   return (
     <div className="relative">
       <div className="p-2">
-        {files.map((file) => (
+        {files.map(file => (
           <FileTreeItem
             key={file.id}
             item={file}

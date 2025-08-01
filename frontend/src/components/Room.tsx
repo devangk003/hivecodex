@@ -1,9 +1,8 @@
-  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
-import FloatingUserCard from "./FloatingUserCard";
-import type { SelectedFile } from "@/components/MonacoEditor";
-import { API_BASE_URL } from "@/lib/api";
-import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback } from "react";
+import FloatingUserCard from './FloatingUserCard';
+import type { SelectedFile } from '@/types';
+import { API_BASE_URL } from '@/lib/api';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft,
   MessageSquare,
@@ -13,22 +12,24 @@ import {
   MicOff,
   Headphones,
   Settings,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ActivityBar } from "@/components/ActivityBar";
-import { PanelContainer } from "@/components/PanelContainer";
-import { MonacoEditor } from "@/components/MonacoEditor";
-import { ActivityPanel } from "@/components/ActivityPanel";
-import Chat from "@/components/Chat";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAuth } from "@/contexts/AuthContext";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
-import socketService from "@/lib/socket";
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ActivityBar } from '@/components/ActivityBar';
+import { PanelContainer } from '@/components/PanelContainer';
+import { MonacoEditor } from '@/components/MonacoEditor';
+import { ActivityPanel } from '@/components/ActivityPanel';
+import Chat from '@/components/Chat';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAuth } from '@/contexts/AuthContext';
+import { useUserStatusContext } from '@/contexts/UserStatusContext';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import socketService from '@/lib/socket';
+import type { RoomParticipant } from '@/types/userStatus';
 
 interface FileTreeItem {
   id: string;
   name: string;
-  type: "file" | "folder";
+  type: 'file' | 'folder';
   path: string;
   size?: number;
   content?: string;
@@ -40,164 +41,116 @@ interface FileTreeItem {
   fileId?: string;
 }
 
-import { User, Participant as APIParticipant } from "@/lib/api";
-
-interface Participant {
-  id: string;
-  name: string;
-  avatar?: string;
-  profilePicId?: string;
-  isOnline: boolean;
-  status: "online" | "away" | "offline";
-  lastSeen?: Date;
-}
+import { User, Participant as APIParticipant } from '@/lib/api';
 
 const Room = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { 
+    participants, 
+    currentRoomId, 
+    enterRoom, 
+    leaveRoom, 
+    updateParticipantStatus,
+    getUserStatus 
+  } = useUserStatusContext();
 
   // Panel state
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   const [isRightPanelMinimized, setIsRightPanelMinimized] = useState(false);
-  const [activeView, setActiveView] = useState("files");
+  const [activeView, setActiveView] = useState('files');
 
   // Voice state
   const [isVoiceConnected, setIsVoiceConnected] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
 
-  // Participant state
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  // File state
+  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
 
-  // Initialize socket connection and listeners
+  // Room participants (converted from Map to Array for easier handling)
+  const roomParticipants: RoomParticipant[] = Array.from(participants.values())
+    .filter(p => p.currentRoomId === roomId)
+    .map(p => ({
+      id: p.userId,
+      name: p.userName,
+      profilePicId: p.profilePicId,
+      status: p.roomStatus || 'offline',
+      isOnline: p.globalStatus === 'online' && p.roomStatus !== 'offline',
+      lastSeen: p.lastSeen,
+      currentRoomId: p.currentRoomId,
+    }));
+
+  // Initialize room and socket connection
   useEffect(() => {
     if (!roomId || !user) return;
+
+    // Enter the room using the status context
+    enterRoom(roomId);
 
     // Join room with user info
     socketService.joinRoom(roomId, user);
 
     // Listen for participant updates
     const handleParticipantJoined = (participant: APIParticipant) => {
-      setParticipants((prev) => {
-        const existing = prev.find((p) => p.id === participant.id);
-        if (existing) {
-          return prev.map((p) =>
-            p.id === participant.id
-              ? {
-                  ...p,
-                  isOnline: true,
-                  status: "online" as const,
-                }
-              : p,
-          );
-        }
-        return [
-          ...prev,
-          {
-            id: participant.id,
-            name: participant.name,
-            isOnline: true,
-            status: "online" as const,
-            profilePicId: participant.profilePicId,
-          },
-        ];
+      updateParticipantStatus({
+        userId: participant.id,
+        userName: participant.name,
+        profilePicId: participant.profilePicId,
+        globalStatus: 'online',
+        roomStatus: 'in-room',
+        currentRoomId: roomId,
+        isInSameRoom: true,
       });
-
-      // Add system message for user joining (if not current user)
-      if (participant.id !== user?.id) {
-        // Here you could emit a system message or handle it via socket
-      }
     };
 
     const handleParticipantLeft = (data: { userId: string; name: string }) => {
-      setParticipants((prev) =>
-        prev.map((p) =>
-          p.id === data.userId
-            ? {
-                ...p,
-                isOnline: false,
-                status: "offline" as const,
-                lastSeen: new Date(),
-              }
-            : p,
-        ),
-      );
-
-      // Add system message for user leaving
-    };
-
-    // Updates the participants list by merging the latest participant data from the server
-    // with the current state, ensuring online status and profile photos are up-to-date.
-    const handleParticipantList = (participantList: APIParticipant[]) => {
-      setParticipants((prev) => {
-        // Create a map of current participants to preserve offline ones
-        const currentParticipants = new Map(prev.map((p) => [p.id, p]));
-
-        // Process new participant list
-        const updatedParticipants = participantList.map((p) => {
-          const isOnline = p.online || false;
-          const status = isOnline ? ("online" as const) : ("offline" as const);
-
-          return {
-            id: p.id,
-            name: p.name,
-            isOnline: isOnline,
-            status: status,
-            profilePicId: p.profilePicId,
-            lastSeen: !isOnline ? new Date() : undefined,
-          };
+      const userData = getUserStatus(data.userId);
+      if (userData) {
+        updateParticipantStatus({
+          ...userData,
+          roomStatus: 'offline',
+          currentRoomId: undefined,
+          lastSeen: new Date(),
+          isInSameRoom: false,
         });
-  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
-        // Merge with existing offline participants that aren't in the new list
-        const newParticipantIds = new Set(updatedParticipants.map((p) => p.id));
-        const preservedOfflineParticipants = prev.filter(
-          (p) => !p.isOnline && !newParticipantIds.has(p.id),
-        );
-
-        const finalParticipants = [
-          ...updatedParticipants,
-          ...preservedOfflineParticipants,
-        ];
-        return finalParticipants;
-      });
+      }
     };
 
-    const handleUserStatusUpdate = (data: {
-      userId: string;
-      userName: string;
-      status: string;
-    }) => {
-      setParticipants((prev) =>
-        prev.map((p) =>
-          p.id === data.userId
-            ? {
-                ...p,
-                status: data.status as "online" | "away" | "offline",
-                isOnline: data.status !== "offline",
-              }
-            : p,
-        ),
-      );
+    const handleParticipantList = (participantList: APIParticipant[]) => {
+      participantList.forEach(p => {
+        const isOnline = p.online || false;
+        const status = isOnline ? 'in-room' : 'offline';
+        
+        updateParticipantStatus({
+          userId: p.id,
+          userName: p.name,
+          profilePicId: p.profilePicId,
+          globalStatus: isOnline ? 'online' : 'offline',
+          roomStatus: status,
+          currentRoomId: isOnline ? roomId : undefined,
+          lastSeen: !isOnline ? new Date() : undefined,
+          isInSameRoom: isOnline,
+        });
+      });
     };
 
     // Set up socket listeners
     socketService.onUserJoined(handleParticipantJoined);
     socketService.onUserLeft(handleParticipantLeft);
     socketService.onRoomParticipants(handleParticipantList);
-    socketService.onUserStatusUpdate(handleUserStatusUpdate);
 
-    // Cleanup
+    // Cleanup when leaving room
     return () => {
-      // Listeners are now managed by socketService
+      leaveRoom();
     };
-  }, [roomId, user]);
-
+  }, [roomId, user, enterRoom, leaveRoom, updateParticipantStatus, getUserStatus]);
 
   // Voice controls
   const handleVoiceToggle = useCallback(() => {
-    setIsVoiceConnected((prev) => !prev);
+    setIsVoiceConnected(prev => !prev);
     // TODO: Implement actual voice connect/disconnect logic
   }, []);
 
@@ -228,15 +181,15 @@ const Room = () => {
     // TODO: Load file content and display in code editor
   }, []);
 
-  const onlineCount = participants.filter(
-    (p) => p.status === "online" && p.isOnline,
+  const onlineCount = roomParticipants.filter(
+    p => p.status === 'in-room' && p.isOnline
   ).length;
-  const awayCount = participants.filter(
-    (p) => p.status === "away" && p.isOnline,
+  const awayCount = roomParticipants.filter(
+    p => p.status === 'away' && p.isOnline
   ).length;
-  const offlineCount = participants.filter((p) => !p.isOnline).length;
-  const activeParticipants = participants.filter((p) => p.isOnline);
-  const totalCount = participants.length; // Include all participants (online and offline)
+  const offlineCount = roomParticipants.filter(p => !p.isOnline).length;
+  const activeParticipants = roomParticipants.filter(p => p.isOnline);
+  const totalCount = roomParticipants.length; // Include all participants (online and offline)
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
@@ -245,7 +198,7 @@ const Room = () => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate("/")}
+          onClick={() => navigate('/')}
           className="mr-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -280,7 +233,7 @@ const Room = () => {
           <Button
             variant="ghost"
             size="sm"
-            className={`h-8 w-8 p-0 panel-button ${isRightPanelOpen && !isRightPanelMinimized ? "bg-discord-primary" : "hover:bg-discord-sidebar-hover"}`}
+            className={`h-8 w-8 p-0 panel-button ${isRightPanelOpen && !isRightPanelMinimized ? 'bg-discord-primary' : 'hover:bg-discord-sidebar-hover'}`}
             onClick={() => {
               if (isRightPanelMinimized) {
                 setIsRightPanelMinimized(false);
@@ -310,7 +263,7 @@ const Room = () => {
               onMuteToggle={handleMuteToggle}
               isDeafened={isDeafened}
               onDeafenToggle={handleDeafenToggle}
-              roomId={roomId || ""}
+              roomId={roomId || ''}
             />
           </div>
 
@@ -328,7 +281,7 @@ const Room = () => {
                 <PanelContainer
                   activeView={activeView}
                   isOpen={isExplorerOpen}
-                  roomId={roomId || ""}
+                  roomId={roomId || ''}
                   onFileSelect={handleFileSelect}
                 />
               </Panel>
@@ -346,7 +299,7 @@ const Room = () => {
           >
             <div className="h-full overflow-hidden">
               <MonacoEditor
-                roomId={roomId || ""}
+                roomId={roomId || ''}
                 selectedFile={selectedFile}
                 onFileContentChange={(fileId, content) => {
                   // TODO: Implement real-time collaboration
@@ -403,15 +356,15 @@ const Room = () => {
                       className="flex-1 m-0 p-0 overflow-hidden"
                     >
                       <ActivityPanel
-                        participants={participants}
-                        roomId={roomId || ""}
+                        participants={roomParticipants}
+                        roomId={roomId || ''}
                       />
                     </TabsContent>
                     <TabsContent
                       value="chat"
                       className="flex-1 m-0 p-0 overflow-hidden"
                     >
-                      <Chat roomId={roomId || ""} />
+                      <Chat roomId={roomId || ''} />
                     </TabsContent>
                   </Tabs>
                 </div>

@@ -1,3 +1,6 @@
+/* Import Monaco Editor collaboration styles */
+@import './components/MonacoEditor.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -139,7 +142,7 @@
   }
 
   .user-cursor-before {
-    content: "";
+    content: '';
     position: absolute;
     width: 2px;
     height: 20px;
@@ -188,7 +191,7 @@
 
   /* Visual indicator for resize handle */
   .react-resizable-handle::before {
-    content: "";
+    content: '';
     position: absolute;
     top: 0;
     left: 0;

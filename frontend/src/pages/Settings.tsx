@@ -1,4 +1,4 @@
-import SettingsPanel from "@/components/SettingsPanel";
+import SettingsPanel from '@/components/SettingsPanel';
 
 const Settings = () => {
   return <SettingsPanel />;

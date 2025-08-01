@@ -1,8 +1,8 @@
-import React from "react";
-import { Search, Filter, Replace } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import React from 'react';
+import { Search, Filter, Replace } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface SearchPanelProps {
   isOpen: boolean;

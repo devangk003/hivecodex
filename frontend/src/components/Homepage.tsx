@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect } from 'react';
 import {
   Plus,
   Users,
@@ -8,32 +8,32 @@ import {
   LogOut,
   UserPlus,
   Trash2,
-} from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import SettingsModal from "./SettingsModal";
-import { Input } from "@/components/ui/input";
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import SettingsModal from './SettingsModal';
+import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { useAuth } from "@/contexts/AuthContext";
-import { Room, roomAPI } from "@/lib/api";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+} from '@/components/ui/card';
+import { useAuth } from '@/contexts/AuthContext';
+import { Room, roomAPI } from '@/lib/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { Loader2 } from "lucide-react";
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Loader2 } from 'lucide-react';
 
 const Homepage = () => {
   // Dropdown state for user menu
@@ -42,29 +42,29 @@ const Homepage = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const { user, logout } = useAuth();
   const queryClient = useQueryClient();
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [showJoinRoom, setShowJoinRoom] = useState(false);
   const [showJoinByIdDialog, setShowJoinByIdDialog] = useState(false);
-  const [joinRoomId, setJoinRoomId] = useState("");
-  const [joinRoomIdInput, setJoinRoomIdInput] = useState("");
-  const [joinRoomPassword, setJoinRoomPassword] = useState("");
-  const [newRoomName, setNewRoomName] = useState("");
-  const [newRoomDescription, setNewRoomDescription] = useState("");
+  const [joinRoomId, setJoinRoomId] = useState('');
+  const [joinRoomIdInput, setJoinRoomIdInput] = useState('');
+  const [joinRoomPassword, setJoinRoomPassword] = useState('');
+  const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomDescription, setNewRoomDescription] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
-  const [roomPassword, setRoomPassword] = useState("");
+  const [roomPassword, setRoomPassword] = useState('');
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [roomToDelete, setRoomToDelete] = useState<Room | null>(null);
-  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
   // Delete room mutation (must be after queryClient is defined)
   const deleteRoomMutation = useMutation({
     mutationFn: (roomId: string) => roomAPI.deleteRoom(roomId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rooms"] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
       setShowDeleteDialog(false);
       setRoomToDelete(null);
-      setDeleteConfirmName("");
+      setDeleteConfirmName('');
     },
   });
 
@@ -74,7 +74,7 @@ const Homepage = () => {
     isLoading: roomsLoading,
     error,
   } = useQuery({
-    queryKey: ["rooms"],
+    queryKey: ['rooms'],
     queryFn: roomAPI.getUserRooms,
   });
 
@@ -91,13 +91,13 @@ const Homepage = () => {
       isPrivate: boolean;
       password?: string;
     }) => roomAPI.createRoom(name, description, isPrivate, password),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["rooms"] });
+    onSuccess: data => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
       setShowCreateRoom(false);
-      setNewRoomName("");
-      setNewRoomDescription("");
+      setNewRoomName('');
+      setNewRoomDescription('');
       setIsPrivate(false);
-      setRoomPassword("");
+      setRoomPassword('');
       // Navigate to the newly created room
       navigate(`/room/${data.room.id}`);
     },
@@ -107,12 +107,12 @@ const Homepage = () => {
   const joinRoomMutation = useMutation({
     mutationFn: ({ roomId, password }: { roomId: string; password?: string }) =>
       roomAPI.joinRoom(roomId, password),
-    onSuccess: (data) => {
+    onSuccess: data => {
       setShowJoinRoom(false);
       setShowJoinByIdDialog(false);
-      setJoinRoomId("");
-      setJoinRoomIdInput("");
-      setJoinRoomPassword("");
+      setJoinRoomId('');
+      setJoinRoomIdInput('');
+      setJoinRoomPassword('');
       navigate(`/room/${data.room.id}`);
     },
   });
@@ -120,8 +120,8 @@ const Homepage = () => {
   // Filter rooms based on search
   const filteredRooms = rooms.filter(
     (room: Room) =>
-      (room.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (room.description || "").toLowerCase().includes(searchTerm.toLowerCase()),
+      (room.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (room.description || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleCreateRoom = async () => {
@@ -175,15 +175,15 @@ const Homepage = () => {
           // If public, join directly
           joinRoomMutation.mutate({ roomId: joinRoomIdInput.trim() });
           setShowJoinByIdDialog(false);
-          setJoinRoomIdInput("");
+          setJoinRoomIdInput('');
         }
       } catch (error) {
         // If room doesn't exist or other error, show error
-        console.error("Error getting room info:", error);
+        console.error('Error getting room info:', error);
         // For now, just try to join and let the backend handle the error
         joinRoomMutation.mutate({ roomId: joinRoomIdInput.trim() });
         setShowJoinByIdDialog(false);
-        setJoinRoomIdInput("");
+        setJoinRoomIdInput('');
       }
     }
   };
@@ -192,7 +192,7 @@ const Homepage = () => {
     const date = new Date(dateTimeString);
     return {
       date: date.toLocaleDateString(),
-      time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
   };
 
@@ -265,14 +265,14 @@ const Homepage = () => {
                 >
                   <button
                     className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-[#23272f] hover:bg-[#2a2f3a] border border-[#3a3f4a] shadow-lg text-white font-mono text-base font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onClick={() => setShowDropdown((v) => !v)}
+                    onClick={() => setShowDropdown(v => !v)}
                     aria-haspopup="true"
                     aria-expanded={showDropdown}
                     style={{ zIndex: 51 }}
                   >
                     <span className="truncate max-w-[120px]">{user?.name}</span>
                     <svg
-                      className={`w-4 h-4 ml-1 transition-transform ${showDropdown ? "rotate-180" : ""}`}
+                      className={`w-4 h-4 ml-1 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
@@ -290,7 +290,7 @@ const Homepage = () => {
                       className={`absolute left-0 top-full mt-2 w-48 bg-[#23272f] border border-[#3a3f4a] rounded-lg shadow-2xl z-50
                       transition-all duration-300 origin-top scale-y-100 opacity-100 pointer-events-auto sheet-unfold`}
                       style={{
-                        transitionProperty: "opacity, transform",
+                        transitionProperty: 'opacity, transform',
                         minWidth: 180,
                       }}
                       onMouseEnter={handleEnter}
@@ -350,7 +350,7 @@ const Homepage = () => {
           {/* Hero Section */}
           <section className="w-full flex flex-col items-center mb-10">
             <h2 className="text-3xl md:text-4xl font-bold text-center mb-2 font-mono">
-              Welcome, {user?.name || "Developer"}!
+              Welcome, {user?.name || 'Developer'}!
             </h2>
             <p className="text-center text-muted-foreground max-w-xl mb-6">
               Instantly create or join collaborative coding rooms. Minimal,
@@ -379,7 +379,7 @@ const Homepage = () => {
               <Input
                 placeholder="Search your rooms..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={e => setSearchTerm(e.target.value)}
                 className="flex-1"
                 aria-label="Search rooms"
               />
@@ -389,8 +389,8 @@ const Homepage = () => {
               <div className="text-center py-12">
                 <div className="text-muted-foreground mb-4">
                   {searchTerm
-                    ? "No rooms found matching your search."
-                    : "No rooms yet. Create your first room!"}
+                    ? 'No rooms found matching your search.'
+                    : 'No rooms yet. Create your first room!'}
                 </div>
                 {!searchTerm && (
                   <Button onClick={() => setShowCreateRoom(true)}>
@@ -450,7 +450,7 @@ const Homepage = () => {
                             {time}
                           </span>
                           <span className="bg-primary/10 text-primary px-2 py-0.5 rounded font-mono">
-                            {room.language || "Multiple"}
+                            {room.language || 'Multiple'}
                           </span>
                         </div>
                         <Button
@@ -476,7 +476,7 @@ const Homepage = () => {
                     {roomToDelete && (
                       <div className="space-y-4 text-center">
                         <div className="text-destructive text-sm">
-                          Are you sure you want to <b>delete</b> the room{" "}
+                          Are you sure you want to <b>delete</b> the room{' '}
                           <b>"{roomToDelete.name}"</b>?<br />
                           This action cannot be undone.
                           <br />
@@ -486,7 +486,7 @@ const Homepage = () => {
                         <Input
                           autoFocus
                           value={deleteConfirmName}
-                          onChange={(e) => setDeleteConfirmName(e.target.value)}
+                          onChange={e => setDeleteConfirmName(e.target.value)}
                           placeholder={`Type "${roomToDelete.name}" to confirm`}
                           aria-label="Confirm room name"
                           className="text-center"
@@ -497,7 +497,7 @@ const Homepage = () => {
                             onClick={() => {
                               setShowDeleteDialog(false);
                               setRoomToDelete(null);
-                              setDeleteConfirmName("");
+                              setDeleteConfirmName('');
                             }}
                             className="flex-1"
                           >
@@ -517,11 +517,11 @@ const Homepage = () => {
                           >
                             {deleteRoomMutation.isPending ? (
                               <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />{" "}
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />{' '}
                                 Deleting...
                               </>
                             ) : (
-                              "Delete Room"
+                              'Delete Room'
                             )}
                           </Button>
                         </div>
@@ -546,7 +546,7 @@ const Homepage = () => {
                 <Input
                   id="roomName"
                   value={newRoomName}
-                  onChange={(e) => setNewRoomName(e.target.value)}
+                  onChange={e => setNewRoomName(e.target.value)}
                   placeholder="Enter room name"
                   autoFocus
                 />
@@ -556,7 +556,7 @@ const Homepage = () => {
                 <Textarea
                   id="roomDescription"
                   value={newRoomDescription}
-                  onChange={(e) => setNewRoomDescription(e.target.value)}
+                  onChange={e => setNewRoomDescription(e.target.value)}
                   placeholder="Enter room description"
                 />
               </div>
@@ -575,7 +575,7 @@ const Homepage = () => {
                     id="roomPassword"
                     type="password"
                     value={roomPassword}
-                    onChange={(e) => setRoomPassword(e.target.value)}
+                    onChange={e => setRoomPassword(e.target.value)}
                     placeholder="Enter room password"
                   />
                 </div>
@@ -595,7 +595,7 @@ const Homepage = () => {
                     Creating...
                   </>
                 ) : (
-                  "Create Room"
+                  'Create Room'
                 )}
               </Button>
             </div>
@@ -613,7 +613,7 @@ const Homepage = () => {
                 <Input
                   id="joinRoomIdInput"
                   value={joinRoomIdInput}
-                  onChange={(e) => setJoinRoomIdInput(e.target.value)}
+                  onChange={e => setJoinRoomIdInput(e.target.value)}
                   placeholder="Enter room ID"
                   autoFocus
                 />
@@ -629,7 +629,7 @@ const Homepage = () => {
                     Joining...
                   </>
                 ) : (
-                  "Join Room"
+                  'Join Room'
                 )}
               </Button>
             </div>
@@ -648,7 +648,7 @@ const Homepage = () => {
                   id="joinPassword"
                   type="password"
                   value={joinRoomPassword}
-                  onChange={(e) => setJoinRoomPassword(e.target.value)}
+                  onChange={e => setJoinRoomPassword(e.target.value)}
                   placeholder="Enter room password"
                   autoFocus
                 />
@@ -666,7 +666,7 @@ const Homepage = () => {
                     Joining...
                   </>
                 ) : (
-                  "Join Room"
+                  'Join Room'
                 )}
               </Button>
             </div>
