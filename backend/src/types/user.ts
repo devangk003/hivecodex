@@ -1,11 +1,12 @@
-import { ObjectId } from "mongoose";
+import mongoose from "mongoose";
 
 export enum UserStatus {
   ONLINE = "online",
   OFFLINE = "offline",
   AWAY = "away",
   BUSY = "busy",
-  IDLE = "idle"
+  IDLE = "idle",
+  IN_ROOM = "in-room"
 }
 
 export enum UserConnectionStatus {
@@ -23,14 +24,14 @@ export interface User {
   typing: boolean;
   currentFile: string | null;
   socketId: string;
-  userId: ObjectId;
-  profilePicId?: ObjectId;
+  userId: mongoose.Types.ObjectId;
+  profilePicId?: mongoose.Types.ObjectId;
   lastSeen: Date;
   joinedAt: Date;
 }
 
 export interface UserSession {
-  userId: ObjectId;
+  userId: mongoose.Types.ObjectId;
   userName: string;
   socketId: string;
   roomId: string;
@@ -40,9 +41,9 @@ export interface UserSession {
 }
 
 export interface UserInRoom {
-  userId: ObjectId;
+  userId: mongoose.Types.ObjectId;
   userName: string;
-  profilePicId?: ObjectId;
+  profilePicId?: mongoose.Types.ObjectId;
   status: UserStatus;
   isTyping: boolean;
   currentFile?: string;
@@ -51,7 +52,7 @@ export interface UserInRoom {
 }
 
 export interface UserPresence {
-  userId: ObjectId;
+  userId: mongoose.Types.ObjectId;
   userName: string;
   status: UserStatus;
   lastSeen: Date;
@@ -60,7 +61,7 @@ export interface UserPresence {
 }
 
 export interface TypingUser {
-  userId: ObjectId;
+  userId: mongoose.Types.ObjectId;
   userName: string;
   fileName: string;
   cursorPosition: number;
@@ -68,7 +69,7 @@ export interface TypingUser {
 }
 
 export interface UserActivity {
-  userId: ObjectId;
+  userId: mongoose.Types.ObjectId;
   roomId: string;
   action: string;
   timestamp: Date;
@@ -77,11 +78,11 @@ export interface UserActivity {
 
 // Database User Schema Interface
 export interface IUser {
-  _id: ObjectId;
+  _id: mongoose.Types.ObjectId;
   name: string;
   email: string;
   password: string;
-  profilePicId?: ObjectId;
+  profilePicId?: mongoose.Types.ObjectId;
   rememberMe: boolean;
   resetToken?: string;
   resetTokenExpiry?: Date;
@@ -92,7 +93,7 @@ export interface IUser {
 
 // JWT Payload Interface
 export interface JwtPayload {
-  userId: ObjectId;
+  userId: mongoose.Types.ObjectId;
   email: string;
   name: string;
   iat: number;
@@ -100,10 +101,10 @@ export interface JwtPayload {
 }
 
 export interface AuthenticatedUser {
-  userId: ObjectId;
+  userId: mongoose.Types.ObjectId;
   name: string;
   email: string;
-  profilePicId?: ObjectId;
+  profilePicId?: mongoose.Types.ObjectId;
   activityStatus: UserStatus;
 }
 

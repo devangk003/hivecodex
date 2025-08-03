@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => ({
     port: 8080, // or your desired port
     proxy: {
       '/api': {
-        target: 'http://192.168.29.26:5000', // Use your PC's LAN IP so mobile can reach backend
+        target: 'http://localhost:5000', // Updated to localhost for local development
         changeOrigin: true,
         secure: false,
       },

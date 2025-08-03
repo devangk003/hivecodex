@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Send, Smile, Plus, Hash, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { Message, chatAPI, Reaction } from '@/lib/api';
-import socketService from '@/lib/socket';
 import { toast } from 'sonner';
 
 interface ChatProps {
@@ -17,13 +17,68 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
   const [reactingMessageId, setReactingMessageId] = useState<string | null>(
     null
   );
+  const [emojiPickerPosition, setEmojiPickerPosition] = useState<{ top: number; left: number } | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [typingUsers, setTypingUsers] = useState<
     Array<{ userId: string; userName: string }>
   >([]);
   const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { user } = useAuth();
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const { user, socketService } = useAuth(); // Get socketService from context
+
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setReactingMessageId(null);
+        setEmojiPickerPosition(null);
+      }
+    };
+
+    if (reactingMessageId) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [reactingMessageId]);
+
+  // Handle opening emoji picker with position calculation
+  const handleOpenEmojiPicker = (messageId: string, buttonElement: HTMLElement) => {
+    const rect = buttonElement.getBoundingClientRect();
+    const emojiPickerWidth = 280; // Conservative estimate of emoji picker width
+    const margin = 30; // Margin from all screen edges
+    const viewportWidth = window.innerWidth;
+    
+    let left: number;
+    let top: number = rect.bottom + 8; // 8px below the button
+    
+    // Calculate bounds with margins
+    const minLeft = margin; // 30px from left edge
+    const maxLeft = viewportWidth - emojiPickerWidth - margin; // 30px from right edge
+    
+    // Preferred position: picker to the left of button
+    const preferredLeft = rect.left - emojiPickerWidth;
+    
+    // Apply constraints to stay within screen bounds
+    if (preferredLeft >= minLeft && preferredLeft <= maxLeft) {
+      left = preferredLeft; // Use preferred if it fits
+    } else {
+      // Clamp to bounds: either minLeft or maxLeft
+      left = Math.max(minLeft, Math.min(preferredLeft, maxLeft));
+    }
+    
+    // Ensure it doesn't go off the bottom of the screen
+    const emojiPickerHeight = 60;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < emojiPickerHeight + margin) {
+      top = rect.top - emojiPickerHeight - 8; // Position above the button
+    }
+    
+    setEmojiPickerPosition({ top, left });
+    setReactingMessageId(messageId);
+  };
 
   // Handle add/remove reaction
   const handleReaction = async (messageId: string, emoji: string) => {
@@ -37,9 +92,11 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
       let updatedReactions: Reaction[] = [];
       if (hasReacted) {
         const res = await chatAPI.removeReaction(messageId, emoji);
+        console.log('Remove reaction response:', res);
         updatedReactions = res.reactions;
       } else {
         const res = await chatAPI.addReaction(messageId, emoji);
+        console.log('Add reaction response:', res);
         updatedReactions = res.reactions;
       }
       setMessages(msgs =>
@@ -47,7 +104,9 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
           m.id === messageId ? { ...m, reactions: updatedReactions } : m
         )
       );
+      setReactingMessageId(null);
     } catch (err) {
+      console.error('Failed to update reaction:', err);
       toast.error('Failed to update reaction');
     }
   };
@@ -55,37 +114,73 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
   // Load existing messages when component mounts
   useEffect(() => {
     const loadMessages = async () => {
-      if (!roomId) return;
+      if (!roomId) {
+        console.warn('No roomId provided to Chat component');
+        return;
+      }
+      if (!user) {
+        console.warn('No user available when loading messages');
+        return;
+      }
+      
       try {
         setIsLoading(true);
+        console.log(`Loading messages for room: ${roomId}`);
         const response = await chatAPI.getRoomMessages(roomId);
-        if (response.messages && Array.isArray(response.messages)) {
+        console.log(`Received messages response:`, response);
+        
+        // Backend returns messages array directly, not wrapped in a messages property
+        if (Array.isArray(response)) {
+          console.log(`Setting ${response.length} messages`);
+          setMessages(response);
+        } else if (response.messages && Array.isArray(response.messages)) {
+          console.log(`Setting ${response.messages.length} messages from wrapped response`);
           setMessages(response.messages);
         } else {
+          console.warn('Unexpected response format:', response);
           setMessages([]);
         }
       } catch (error) {
+        console.error('Failed to load messages:', error);
         setMessages([]);
       } finally {
         setIsLoading(false);
       }
     };
+    
     loadMessages();
-  }, [roomId]);
+  }, [roomId, user]);
 
-  // Socket listeners
+  // Socket listeners for real-time updates
   useEffect(() => {
     if (!roomId) return;
 
     const handleNewMessage = (message: Message) => {
+      console.log('Received new message via socket:', message);
       setMessages(prev => {
+        // Only add if message doesn't already exist (avoid duplicates)
         const messageExists = prev.some(m => m.id === message.id);
-        if (messageExists) return prev;
+        if (messageExists) {
+          console.log('Message already exists, ignoring socket update:', message.id);
+          return prev;
+        }
+        console.log('Adding new message from socket:', message.id);
         return [...prev, message];
       });
     };
 
-    const handleTyping = (data: {
+    const handleReactionUpdate = (data: { messageId: string; reactions: any[] }) => {
+      console.log('Received reaction update via socket:', data);
+      setMessages(prev => 
+        prev.map(m => 
+          m.id === data.messageId 
+            ? { ...m, reactions: data.reactions }
+            : m
+        )
+      );
+    };
+
+    const handleTypingUpdate = (data: {
       userId: string;
       userName: string;
       isTyping: boolean;
@@ -102,13 +197,26 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
       });
     };
 
+    // Listen to new messages from other users for real-time updates
     socketService.onNewMessage(handleNewMessage);
-    socketService.onTypingUpdate(handleTyping);
+    socketService.onReactionUpdate(handleReactionUpdate);
+    socketService.onTypingUpdate(handleTypingUpdate);
 
     return () => {
+      // Stop typing when leaving the room or component unmounts
+      socketService.stopTyping(roomId);
       // Listeners are managed by socketService now
     };
   }, [roomId]);
+
+  // Cleanup typing indicator on component unmount
+  useEffect(() => {
+    return () => {
+      if (roomId) {
+        socketService.stopTyping(roomId);
+      }
+    };
+  }, []);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -121,24 +229,25 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
     if (!newMessage.trim() || !user) return;
 
     try {
-      const messageData: Message = {
-        id: `${user.id}-${Date.now()}`,
-        sender: user.name,
-        senderId: user.id,
-        text: newMessage.trim(),
-        timestamp: new Date().toISOString(),
-      };
-
+      const messageText = newMessage.trim();
       setNewMessage('');
-      socketService.sendMessage(messageData);
+      
+      // Send message via HTTP API
+      const savedMessage = await chatAPI.sendMessage(roomId, messageText);
+      console.log('Message sent via HTTP, adding to local state:', savedMessage.id);
+      
+      // Add the message to local state immediately for better UX
+      setMessages(prev => [...prev, savedMessage]);
+      
       socketService.stopTyping(roomId);
     } catch (error) {
+      console.error('Failed to send message:', error);
       toast.error('Failed to send message');
     }
   };
 
-  // Handle typing indicators
-  const handleTyping = (value: string) => {
+  // Handle typing input changes
+  const handleInputChange = (value: string) => {
     setNewMessage(value);
     if (value.trim()) {
       socketService.startTyping(roomId);
@@ -254,15 +363,10 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                         <Avatar className="w-10 h-10 flex-shrink-0 mt-0.5">
                           {message.profilePicId ? (
                             <AvatarImage
-                              src={`/api/files/${message.profilePicId}`}
+                              src={`/api/auth/profile/picture/${message.profilePicId}`}
                               alt={message.sender}
                             />
-                          ) : (
-                            <AvatarImage
-                              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(message.sender)}&background=5865f2&color=fff&size=40`}
-                              alt={message.sender}
-                            />
-                          )}
+                          ) : null}
                           <AvatarFallback className="bg-[#5865f2] text-white font-medium">
                             {message.sender.charAt(0).toUpperCase()}
                           </AvatarFallback>
@@ -325,43 +429,10 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                             variant="ghost"
                             size="sm"
                             className="h-6 w-6 p-0 hover:bg-[#35373c] text-[#b5bac1] hover:text-white"
-                            onClick={() => setReactingMessageId(message.id)}
+                            onClick={(e) => handleOpenEmojiPicker(message.id, e.currentTarget)}
                           >
                             <Smile className="w-4 h-4" />
                           </Button>
-                          {/* Emoji Picker (simple) */}
-                          {reactingMessageId === message.id && (
-                            <div className="absolute z-50 right-8 top-0 bg-[#232428] border border-[#35373c] rounded shadow p-2 flex gap-1">
-                              {[
-                                '👍',
-                                '😂',
-                                '😮',
-                                '😢',
-                                '🎉',
-                                '❤️',
-                                '🔥',
-                                '👀',
-                              ].map(emoji => (
-                                <button
-                                  key={emoji}
-                                  className="text-xl hover:scale-125 transition-transform"
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    handleReaction(message.id, emoji);
-                                    setReactingMessageId(null);
-                                  }}
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-                              <button
-                                className="ml-2 text-xs text-[#b5bac1]"
-                                onClick={() => setReactingMessageId(null)}
-                              >
-                                ×
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -413,7 +484,7 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
             <input
               type="text"
               value={newMessage}
-              onChange={e => handleTyping(e.target.value)}
+              onChange={e => handleInputChange(e.target.value)}
               placeholder={`Message #general`}
               className="w-full h-11 px-4 bg-transparent text-[#dcddde] placeholder-[#72767d] text-sm focus:outline-none"
             />
@@ -431,6 +502,52 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
           </div>
         </div>
       </form>
+
+      {/* Portal-based Emoji Picker */}
+      {reactingMessageId && emojiPickerPosition && createPortal(
+        <div 
+          ref={emojiPickerRef}
+          className="fixed z-[9999] bg-[#232428] border border-[#35373c] rounded shadow-2xl p-2 flex gap-1 min-w-max"
+          style={{
+            top: emojiPickerPosition.top,
+            left: emojiPickerPosition.left,
+          }}
+        >
+          {[
+            '👍',
+            '😂',
+            '😮',
+            '😢',
+            '🎉',
+            '❤️',
+            '🔥',
+            '👀',
+          ].map(emoji => (
+            <button
+              key={emoji}
+              className="text-xl hover:scale-125 transition-transform p-1 rounded hover:bg-[#35373c]"
+              onClick={e => {
+                e.stopPropagation();
+                handleReaction(reactingMessageId, emoji);
+                setReactingMessageId(null);
+                setEmojiPickerPosition(null);
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+          <button
+            className="ml-2 text-xs text-[#b5bac1] p-1 hover:bg-[#35373c] rounded"
+            onClick={() => {
+              setReactingMessageId(null);
+              setEmojiPickerPosition(null);
+            }}
+          >
+            ×
+          </button>
+        </div>,
+        document.body
+      )}
     </main>
   );
 };

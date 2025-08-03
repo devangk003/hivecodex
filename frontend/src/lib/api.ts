@@ -82,26 +82,69 @@ export const userAPI = {
   },
 };
 
-// Activity Status API
+// Activity Status API with rate limiting
+const lastStatusUpdate = { timestamp: 0 };
+const STATUS_UPDATE_COOLDOWN = 3000; // 3 seconds
+
 export const activityAPI = {
   getStatus: async () => {
     try {
       const response = await api.get('/user/activity-status');
-      return response.data.activityStatus;
+      return response.data.data.activityStatus; // Backend returns nested data
     } catch (error) {
-      console.warn('Activity status endpoint not available');
-      return 'Online'; // Default status
+      console.warn('Failed to get user activity status:', error);
+      return 'online'; // fallback
+    }
+  },
+
+  // Get all users' activity status from backend (like fetching messages)
+  getAllUsersStatus: async () => {
+    try {
+      const response = await api.get('/users/activity-status');
+      return response.data.data;
+    } catch (error) {
+      console.warn('Failed to get all users activity status:', error);
+      return []; // fallback
     }
   },
   setStatus: async (activityStatus: string) => {
+    // Rate limiting
+    const now = Date.now();
+    if (now - lastStatusUpdate.timestamp < STATUS_UPDATE_COOLDOWN) {
+      if (process.env.NODE_ENV === 'development') {
+        return activityStatus; // Return without making API call
+      }
+    }
     try {
       const response = await api.put('/user/activity-status', { activityStatus });
-      return response.data.activityStatus;
+      return response.data.data.activityStatus; // Backend returns nested data
     } catch (error) {
-      console.warn('Activity status endpoint not available');
+      lastStatusUpdate.timestamp = now;
       return activityStatus; // Return the requested status as if it was set
     }
   },
+  
+  // Get user's joined rooms history
+  getJoinedRooms: async () => {
+    try {
+      const response = await api.get('/user/joined-rooms');
+      return response.data.data;
+    } catch (error) {
+      console.error('Failed to fetch joined rooms:', error);
+      return [];
+    }
+  },
+
+  // Get global user status across all rooms
+  getGlobalUserStatus: async () => {
+    try {
+      const response = await api.get('/users/global-status');
+      return response.data.data;
+    } catch (error) {
+      console.error('Failed to fetch global user status:', error);
+      return [];
+    }
+  }
 };
 
 export interface Room {
@@ -130,6 +173,7 @@ export interface FileItem {
 export interface Reaction {
   emoji: string;
   userId: string;
+  timestamp?: string;
 }
 
 export interface Message {
@@ -166,20 +210,27 @@ export const authAPI = {
     return response.data;
   },
 
-  updateProfile: async (data: {
+  updateProfile: async (data: FormData | {
     name?: string;
     email?: string;
     profilePic?: File | null;
   }) => {
-    // Always use multipart/form-data for profile updates
-    const formData = new FormData();
-    if (data.name) formData.append('name', data.name);
-    if (data.email) formData.append('email', data.email);
-    if (data.profilePic) formData.append('profilePic', data.profilePic);
+    let formData: FormData;
+    
+    if (data instanceof FormData) {
+      formData = data;
+    } else {
+      // Convert object to FormData for backward compatibility
+      formData = new FormData();
+      if (data.name) formData.append('name', data.name);
+      if (data.email) formData.append('email', data.email);
+      if (data.profilePic) formData.append('profilePic', data.profilePic);
+    }
+    
     const response = await api.post('/profile/update', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return response.data;
+    return response.data.data; // Backend returns nested data
   },
 };
 

@@ -1,5 +1,4 @@
 import { Socket, Server } from "socket.io";
-import { SocketEvent } from "../types/socket";
 import { getUsersInRoom, getUserBySocketId } from "./userHelpers";
 
 /**
@@ -8,7 +7,7 @@ import { getUsersInRoom, getUserBySocketId } from "./userHelpers";
 export function broadcastToRoom(
   io: Server, 
   roomId: string, 
-  event: SocketEvent, 
+  event: string, 
   data: any, 
   excludeSocketId?: string
 ): void {
@@ -25,7 +24,7 @@ export function broadcastToRoom(
 export function broadcastToRoomIncludingSender(
   io: Server,
   roomId: string,
-  event: SocketEvent,
+  event: string,
   data: any
 ): void {
   io.to(roomId).emit(event, data);
@@ -37,7 +36,7 @@ export function broadcastToRoomIncludingSender(
 export function sendToUser(
   io: Server,
   socketId: string,
-  event: SocketEvent,
+  event: string,
   data: any
 ): void {
   io.to(socketId).emit(event, data);
@@ -82,7 +81,7 @@ export async function getRoomParticipantsCount(io: Server, roomId: string): Prom
  */
 export function broadcastUserListUpdate(io: Server, roomId: string): void {
   const users = getUsersInRoom(roomId);
-  broadcastToRoomIncludingSender(io, roomId, SocketEvent.USER_JOINED, {
+  broadcastToRoomIncludingSender(io, roomId, "roomParticipants", {
     users,
     count: users.length
   });
@@ -109,7 +108,7 @@ export function broadcastTypingStatus(
     timestamp: new Date().toISOString()
   };
 
-  const event = isTyping ? SocketEvent.TYPING_START : SocketEvent.TYPING_STOP;
+  const event = isTyping ? "typing-start" : "typing-stop";
   broadcastToRoom(io, roomId, event, typingData);
 }
 
@@ -131,10 +130,10 @@ export function broadcastFileOperation(
   excludeSocketId?: string
 ): void {
   const eventMap = {
-    created: SocketEvent.FILE_CREATED,
-    updated: SocketEvent.FILE_UPDATED,
-    deleted: SocketEvent.FILE_DELETED,
-    renamed: SocketEvent.FILE_RENAMED
+    created: "newFile",
+    updated: "fileRead", 
+    deleted: "fileDelete",
+    renamed: "fileMoved"
   };
 
   const event = eventMap[operation];
@@ -161,7 +160,7 @@ export function broadcastCollaborativeChange(
   },
   excludeSocketId?: string
 ): void {
-  broadcastToRoom(io, roomId, SocketEvent.COLLABORATIVE_CHANGE, {
+  broadcastToRoom(io, roomId, "collaborative-change", {
     ...changeData,
     timestamp: new Date().toISOString()
   }, excludeSocketId);
@@ -181,7 +180,7 @@ export function broadcastCursorUpdate(
   },
   excludeSocketId?: string
 ): void {
-  broadcastToRoom(io, roomId, SocketEvent.CURSOR_UPDATE, {
+  broadcastToRoom(io, roomId, "cursor-update", {
     ...cursorData,
     timestamp: new Date().toISOString()
   }, excludeSocketId);
@@ -198,7 +197,7 @@ export function broadcastUserDisconnect(
     userName: string;
   }
 ): void {
-  broadcastToRoomIncludingSender(io, roomId, SocketEvent.USER_DISCONNECTED, {
+  broadcastToRoomIncludingSender(io, roomId, "userDisconnected", {
     ...userData,
     timestamp: new Date().toISOString()
   });
@@ -211,17 +210,14 @@ export function broadcastMessage(
   io: Server,
   roomId: string,
   messageData: {
-    text: string;
-    sender?: string;
-    senderId?: string;
-    userId?: string;
-    userName?: string;
-    timestamp?: string;
-    id?: string;
+    message: string;
+    userName: string;
+    userId: string;
+    timestamp: string;
     messageType?: "text" | "file" | "system" | "code";
   }
 ): void {
-  broadcastToRoomIncludingSender(io, roomId, SocketEvent.MESSAGE, {
+  broadcastToRoomIncludingSender(io, roomId, "message", {
     ...messageData,
     messageType: messageData.messageType || "text"
   });
@@ -236,7 +232,7 @@ export function sendError(
   code?: string,
   details?: any
 ): void {
-  socket.emit(SocketEvent.ERROR, {
+  socket.emit("error", {
     message,
     code,
     details,
@@ -292,7 +288,7 @@ export function notifyUserStatusChange(
   userName: string,
   status: "online" | "offline" | "away" | "busy"
 ): void {
-  const event = status === "online" ? SocketEvent.USER_ONLINE : SocketEvent.USER_OFFLINE;
+  const event = status === "online" ? "userOnline" : "userOffline";
   
   broadcastToRoomIncludingSender(io, roomId, event, {
     userId,

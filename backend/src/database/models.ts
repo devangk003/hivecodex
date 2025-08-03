@@ -43,6 +43,16 @@ const userSchema = new Schema<IUser>({
     enum: Object.values(UserStatus),
     default: UserStatus.OFFLINE 
   },
+  currentRoomId: {
+    type: String,
+    default: null
+  },
+  joinedRooms: [{
+    roomId: { type: String, required: true },
+    roomName: { type: String, required: true },
+    lastJoined: { type: Date, default: Date.now },
+    joinCount: { type: Number, default: 1 }
+  }],
   lastLogin: {
     type: Date,
     default: undefined
@@ -116,7 +126,6 @@ const userSchema = new Schema<IUser>({
 });
 
 // Add indexes for performance
-userSchema.index({ email: 1 });
 userSchema.index({ resetToken: 1 });
 userSchema.index({ emailVerificationToken: 1 });
 
@@ -237,7 +246,6 @@ const roomSchema = new Schema<IRoom>({
 });
 
 // Add indexes for performance
-roomSchema.index({ id: 1 });
 roomSchema.index({ userId: 1 });
 roomSchema.index({ isPrivate: 1 });
 roomSchema.index({ lastActive: -1 });

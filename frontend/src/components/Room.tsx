@@ -17,13 +17,12 @@ import { Button } from '@/components/ui/button';
 import { ActivityBar } from '@/components/ActivityBar';
 import { PanelContainer } from '@/components/PanelContainer';
 import { MonacoEditor } from '@/components/MonacoEditor';
-import { ActivityPanel } from '@/components/ActivityPanel';
+import { UserStatusPanel } from '@/components/UserStatusPanel';
 import Chat from '@/components/Chat';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserStatusContext } from '@/contexts/UserStatusContext';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import socketService from '@/lib/socket';
 import type { RoomParticipant } from '@/types/userStatus';
 
 interface FileTreeItem {
@@ -46,7 +45,7 @@ import { User, Participant as APIParticipant } from '@/lib/api';
 const Room = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, socketService } = useAuth(); // Get socketService from context
   const { 
     participants, 
     currentRoomId, 
@@ -70,15 +69,16 @@ const Room = () => {
   // File state
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
 
-  // Room participants (converted from Map to Array for easier handling)
+  // Room participants (all users who have joined this room, regardless of current location)
   const roomParticipants: RoomParticipant[] = Array.from(participants.values())
-    .filter(p => p.currentRoomId === roomId)
     .map(p => ({
       id: p.userId,
       name: p.userName,
       profilePicId: p.profilePicId,
-      status: p.roomStatus || 'offline',
-      isOnline: p.globalStatus === 'online' && p.roomStatus !== 'offline',
+      status: p.currentRoomId === roomId ? (p.roomStatus || 'in-room') : 
+              p.currentRoomId && p.currentRoomId !== roomId ? 'in-room' : 
+              p.globalStatus === 'online' ? 'online' : 'offline',
+      isOnline: p.globalStatus === 'online',
       lastSeen: p.lastSeen,
       currentRoomId: p.currentRoomId,
     }));
@@ -87,11 +87,25 @@ const Room = () => {
   useEffect(() => {
     if (!roomId || !user) return;
 
-    // Enter the room using the status context
-    enterRoom(roomId);
+    let isCleanedUp = false;
 
-    // Join room with user info
-    socketService.joinRoom(roomId, user);
+    const initializeRoom = async () => {
+      // Prevent multiple initializations
+      if (isCleanedUp) return;
+
+      // Enter the room using the status context
+      await enterRoom(roomId);
+
+      // Small delay to prevent rapid successive calls
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      if (isCleanedUp) return;
+
+      // Join room with user info
+      socketService.joinRoom(roomId, user);
+    };
+
+    initializeRoom();
 
     // Listen for participant updates
     const handleParticipantJoined = (participant: APIParticipant) => {
@@ -119,20 +133,36 @@ const Room = () => {
       }
     };
 
-    const handleParticipantList = (participantList: APIParticipant[]) => {
-      participantList.forEach(p => {
-        const isOnline = p.online || false;
-        const status = isOnline ? 'in-room' : 'offline';
+    const handleParticipantList = (participantList: any[]) => {
+      // Filter out participants with missing essential data
+      const validParticipants = participantList.filter(p => 
+        p && p.userId && p.userName && typeof p.userName === 'string'
+      );
+      
+      if (validParticipants.length !== participantList.length) {
+        console.warn('Room.tsx - Filtered out invalid participants:', {
+          original: participantList.length,
+          valid: validParticipants.length,
+          invalid: participantList.filter(p => !p || !p.userId || !p.userName)
+        });
+      }
+      
+      validParticipants.forEach(p => {
+        // Handle the new UserStatusData format from backend
+        const globalStatus = p.globalStatus || 'offline';
+        const roomStatus = p.roomStatus || 'offline';
+        const currentRoomId = p.currentRoomId;
+        const isInSameRoom = p.isInSameRoom || false;
         
         updateParticipantStatus({
-          userId: p.id,
-          userName: p.name,
+          userId: p.userId || p.id,
+          userName: p.userName || p.name,
           profilePicId: p.profilePicId,
-          globalStatus: isOnline ? 'online' : 'offline',
-          roomStatus: status,
-          currentRoomId: isOnline ? roomId : undefined,
-          lastSeen: !isOnline ? new Date() : undefined,
-          isInSameRoom: isOnline,
+          globalStatus: globalStatus,
+          roomStatus: roomStatus,
+          currentRoomId: currentRoomId,
+          lastSeen: p.lastSeen ? new Date(p.lastSeen) : new Date(),
+          isInSameRoom: isInSameRoom,
         });
       });
     };
@@ -144,9 +174,16 @@ const Room = () => {
 
     // Cleanup when leaving room
     return () => {
+      isCleanedUp = true;
       leaveRoom();
+      // Remove socket listeners to prevent memory leaks and duplicate listeners
+      if (socketService.socket) {
+        socketService.socket.off('userJoined');
+        socketService.socket.off('userDisconnected');
+        socketService.socket.off('roomParticipants');
+      }
     };
-  }, [roomId, user, enterRoom, leaveRoom, updateParticipantStatus, getUserStatus]);
+  }, [roomId, user?.id]); // Only depend on roomId and user.id, not the entire user object
 
   // Voice controls
   const handleVoiceToggle = useCallback(() => {
@@ -355,7 +392,7 @@ const Room = () => {
                       value="activity"
                       className="flex-1 m-0 p-0 overflow-hidden"
                     >
-                      <ActivityPanel
+                      <UserStatusPanel
                         participants={roomParticipants}
                         roomId={roomId || ''}
                       />

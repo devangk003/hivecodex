@@ -446,7 +446,7 @@ app.post("/api/register", upload.single("profilePic"), async (req, res) => {
       name: user.name,
       email: user.email,
       profilePicId: user.profilePicId,
-      activityStatus: user.activityStatus,
+      activityStatus: user.activityStatus || "offline",
     };
 
     res
@@ -495,7 +495,7 @@ app.post("/api/login", async (req, res) => {
       name: user.name,
       email: user.email,
       profilePicId: user.profilePicId,
-      activityStatus: user.activityStatus,
+      activityStatus: user.activityStatus || "offline",
     };
     res.json({ token, user: userData, message: "Login successful" });
   } catch (error) {
@@ -761,6 +761,7 @@ app.get("/api/user", authenticateToken, async (req, res) => {
       name: user.name,
       email: user.email,
       profilePicId: user.profilePicId,
+      activityStatus: user.activityStatus || "offline",
     });
   } catch (err) {
     console.error("User fetch error:", err);
@@ -2162,6 +2163,134 @@ io.on("connection", (socket) => {
       });
     }
   });
+});
+
+// Add missing endpoints that frontend expects
+// Get user profile by ID
+app.get("/api/users/:userId/profile", authenticateToken, async (req, res) => {
+  try {
+    await dbConnectionPromise;
+    const { userId } = req.params;
+    const user = await User.findById(userId).select("-password -resetToken -resetTokenExpiry");
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      profilePicId: user.profilePicId,
+      activityStatus: user.activityStatus
+    });
+  } catch (error) {
+    console.error("User profile fetch error:", error);
+    res.status(500).json({ message: "Failed to fetch user profile. Please try again later." });
+  }
+});
+
+// Get users in a room
+app.get("/api/rooms/:roomId/users", authenticateToken, async (req, res) => {
+  try {
+    await dbConnectionPromise;
+    const { roomId } = req.params;
+    const room = await Room.findOne({ id: roomId });
+    
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    // Get participant details with user info
+    const userIds = room.participantList.map(p => p.userId);
+    const users = await User.find({ _id: { $in: userIds } }).select("name email profilePicId activityStatus");
+    
+    const usersWithStatus = users.map(user => ({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      profilePicId: user.profilePicId,
+      activityStatus: user.activityStatus,
+      online: true // This would come from socket connection tracking
+    }));
+
+    res.json(usersWithStatus);
+  } catch (error) {
+    console.error("Room users fetch error:", error);
+    res.status(500).json({ message: "Failed to fetch room users. Please try again later." });
+  }
+});
+
+// Update user status
+app.put("/api/user/status", authenticateToken, async (req, res) => {
+  try {
+    await dbConnectionPromise;
+    const { status, roomId } = req.body;
+    
+    if (!status || typeof status !== 'string') {
+      return res.status(400).json({ message: "Valid status is required" });
+    }
+
+    await User.findByIdAndUpdate(
+      req.user.id, 
+      { activityStatus: status }, 
+      { new: true }
+    );
+    
+    res.json({ status, roomId });
+  } catch (err) {
+    console.error("User status update error:", err);
+    res.status(500).json({ message: "Failed to update user status. Please try again later." });
+  }
+});
+
+// Leave room endpoint
+app.post("/api/rooms/:roomId/leave", authenticateToken, async (req, res) => {
+  try {
+    await dbConnectionPromise;
+    const { roomId } = req.params;
+    const userId = req.user.id;
+    
+    const room = await Room.findOne({ id: roomId });
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    // Remove user from participants
+    room.participantList = room.participantList.filter(
+      p => p.userId.toString() !== userId
+    );
+    
+    room.participants = Math.max(0, room.participants - 1);
+    await room.save();
+
+    res.json({ message: "Left room successfully" });
+  } catch (error) {
+    console.error("Leave room error:", error);
+    res.status(500).json({ message: "Failed to leave room. Please try again later." });
+  }
+});
+
+// Fix file download endpoint to match frontend expectation
+app.get("/api/files/:fileId/download", async (req, res) => {
+  try {
+    await dbConnectionPromise;
+    const { fileId } = req.params;
+    const downloadStream = gridfsBucket.openDownloadStream(
+      new mongoose.Types.ObjectId(fileId),
+    );
+
+    downloadStream.on("error", () => {
+      res.status(404).json({ message: "File not found in storage" });
+    });
+
+    downloadStream.pipe(res);
+  } catch (error) {
+    console.error("File download error:", error);
+    res
+      .status(500)
+      .json({ message: "Failed to download file. Please try again later." });
+  }
 });
 
 dbConnectionPromise.then(() => {

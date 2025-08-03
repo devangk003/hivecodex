@@ -3,26 +3,18 @@ import { Message, Participant, FileItem, User } from './api';
 import { CollaborativeChange, UserCursor } from './collaboration';
 import { SOCKET_EVENTS } from '@/constants';
 
-// Use LAN IP for dev so all devices can connect to Socket.IO
-const SOCKET_URL = 'http://192.168.29.26:5000';
+// Use localhost for development - change to LAN IP if needed for cross-device testing
+const SOCKET_URL = 'http://localhost:5000';
 
 class SocketService {
-  private socket: Socket | null = null;
+  socket: Socket | null = null;
   private roomId: string | null = null;
-  private static instance: SocketService;
+  private lastJoinAttempt: { roomId: string; timestamp: number } | null = null;
+  private readonly JOIN_COOLDOWN = 2000; // 2 seconds between join attempts
 
+  // Remove singleton pattern to allow multiple independent instances
   constructor() {
-    if (SocketService.instance) {
-      return SocketService.instance;
-    }
-    SocketService.instance = this;
-  }
-
-  static getInstance(): SocketService {
-    if (!SocketService.instance) {
-      SocketService.instance = new SocketService();
-    }
-    return SocketService.instance;
+    // Each instance is independent
   }
 
   isConnected(): boolean {
@@ -30,32 +22,80 @@ class SocketService {
   }
 
   connect(token: string) {
+    console.log(`🔌 [${new Date().toISOString()}] Attempting socket connection...`);
+    console.log(`📍 Socket URL: ${SOCKET_URL}`);
+    console.log(`🔑 Token: ${token ? 'Present' : 'Missing'}`);
+    
     // Don't create multiple connections
     if (this.socket && this.socket.connected) {
+      console.log(`✅ [${new Date().toISOString()}] Socket already connected, reusing connection`);
       return this.socket;
     }
 
     // Disconnect existing socket if it exists
     if (this.socket) {
+      console.log(`🔄 [${new Date().toISOString()}] Disconnecting existing socket before reconnecting`);
       this.socket.disconnect();
     }
 
+    console.log(`🚀 [${new Date().toISOString()}] Creating new socket connection...`);
     this.socket = io(SOCKET_URL, {
       auth: {
         token: token,
       },
+      // Connection stability settings
+      timeout: 20000,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      randomizationFactor: 0.5,
+      autoConnect: true,
+      forceNew: true, // Force new connection to prevent sharing
     });
 
+    // Handle connection events
     this.socket.on('connect', () => {
-      console.log('Socket connected');
+      console.log(`✅ [${new Date().toISOString()}] Socket connected successfully - ID: ${this.socket?.id}`);
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('Socket disconnected');
+    this.socket.on('disconnect', (reason) => {
+      console.log(`🔌❌ [${new Date().toISOString()}] Socket disconnected - Reason: ${reason}`);
+      if (reason === 'io server disconnect') {
+        // Server disconnected the client, reconnect manually
+        console.log(`🔄 [${new Date().toISOString()}] Server disconnected client, attempting manual reconnect...`);
+        this.socket?.connect();
+      }
     });
 
-    this.socket.on('connect_error', (error: Error) => {
-      console.error('Socket connection error:', error);
+    this.socket.on('connect_error', (error) => {
+      console.error(`💥 [${new Date().toISOString()}] Socket connection error:`, error);
+      console.error(`📍 Error details: ${error.message}`);
+      console.error(`🔗 Attempted URL: ${SOCKET_URL}`);
+    });
+
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log(`Socket reconnected after ${attemptNumber} attempts`);
+      // Rejoin room if we were in one
+      if (this.roomId) {
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        if (currentUser._id) {
+          this.joinRoom(this.roomId, currentUser);
+        }
+      }
+    });
+
+    this.socket.on('reconnect_error', (error) => {
+      console.error('Socket reconnection error:', error);
+    });
+
+    this.socket.on('reconnect_failed', () => {
+      console.error('Socket reconnection failed');
+    });
+
+    // Handle server-side pong for heartbeat
+    this.socket.on('pong', () => {
+      console.log('Received pong from server');
     });
 
     return this.socket;
@@ -65,13 +105,29 @@ class SocketService {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
-      this.roomId = null;
     }
+    this.roomId = null;
+    this.lastJoinAttempt = null;
   }
 
   // Room management
   joinRoom(roomId: string, user?: User) {
     if (this.socket) {
+      // Store roomId for reconnection purposes
+      this.roomId = roomId;
+      
+      // Prevent rapid successive join attempts for the same room
+      const now = Date.now();
+      if (this.lastJoinAttempt && 
+          this.lastJoinAttempt.roomId === roomId && 
+          now - this.lastJoinAttempt.timestamp < this.JOIN_COOLDOWN) {
+        console.log(`Skipping duplicate join room attempt for ${roomId}`);
+        return;
+      }
+
+      // Update last join attempt
+      this.lastJoinAttempt = { roomId, timestamp: now };
+
       // Get user info from token if not provided
       let userId = user?.id;
       let userName = user?.name;
@@ -120,24 +176,16 @@ class SocketService {
     }
   }
 
-  // Chat functionality
-  sendMessage(message: Message) {
-    if (this.socket) {
-      // Include room ID in the message payload
-      const messageWithRoom = {
-        ...message,
-        roomId: this.roomId,
-      };
-
-      this.socket.emit('message', messageWithRoom);
-    } else {
-      console.warn('Cannot send message: socket not connected');
-    }
-  }
-
+  // NOTE: Message sending uses HTTP API, but we still listen for real-time updates from other users
   onNewMessage(callback: (message: Message) => void) {
     if (this.socket) {
       this.socket.on('message', callback);
+    }
+  }
+
+  onReactionUpdate(callback: (data: { messageId: string; reactions: any[] }) => void) {
+    if (this.socket) {
+      this.socket.on('reactionUpdate', callback);
     }
   }
 
@@ -156,7 +204,7 @@ class SocketService {
 
   onUserLeft(callback: (data: { userId: string; name: string }) => void) {
     if (this.socket) {
-      this.socket.on('userLeft', callback);
+      this.socket.on('userDisconnected', callback);
     }
   }
 
@@ -253,21 +301,26 @@ class SocketService {
   emitUserStatus(roomId: string, status: 'online' | 'away' | 'offline' | 'in-room') {
     if (this.socket && this.socket.connected) {
       try {
-        this.socket.emit('user-status', { roomId, status });
+        // Use statusChange event that backend actually handles
+        this.socket.emit('statusChange', { 
+          roomId, 
+          online: status === 'online' || status === 'in-room' 
+        });
       } catch (error) {
-        console.warn('Failed to emit user status:', error);
+        // Silently fail to prevent console spam
       }
-    } else {
-      console.warn('Cannot emit user status: socket not connected');
     }
   }
 
   emitGlobalUserStatus(status: 'online' | 'offline') {
     if (this.socket && this.socket.connected) {
       try {
-        this.socket.emit('global-user-status', { status });
+        // Use statusChange event that backend actually handles
+        this.socket.emit('statusChange', { 
+          online: status === 'online' 
+        });
       } catch (error) {
-        console.warn('Failed to emit global user status:', error);
+        // Silently fail to prevent console spam
       }
     } else {
       console.warn('Cannot emit global user status: socket not connected');
@@ -296,6 +349,46 @@ class SocketService {
   ) {
     if (this.socket) {
       this.socket.on('global-user-status-update', callback);
+    }
+  }
+
+  onStatusChange(
+    callback: (data: {
+      userId: string;
+      userName: string;
+      online: boolean;
+      timestamp: string;
+    }) => void
+  ) {
+    if (this.socket) {
+      this.socket.on('statusChange', callback);
+    }
+  }
+
+  onUserActivityStatusUpdate(
+    callback: (data: {
+      userId: string;
+      userName: string;
+      activityStatus: string;
+      timestamp: string;
+    }) => void
+  ) {
+    if (this.socket) {
+      this.socket.on('user-activity-status-update', callback);
+    }
+  }
+
+  onUserStatusRefresh(
+    callback: (data: {
+      userId: string;
+      userName: string;
+      activityStatus: string;
+      timestamp: string;
+      roomId?: string;
+    }) => void
+  ) {
+    if (this.socket) {
+      this.socket.on('user-status-refresh', callback);
     }
   }
 
@@ -373,5 +466,9 @@ class SocketService {
   }
 }
 
-const socketService = SocketService.getInstance();
+// Export the class so it can be instantiated elsewhere
+export { SocketService };
+
+// Create a default instance for backward compatibility
+const socketService = new SocketService();
 export default socketService;

@@ -1,10 +1,11 @@
 import { Socket } from "socket.io";
-import { User, UserInRoom, UserSession, TypingUser } from "../types/user";
+import { User, UserInRoom, UserSession, TypingUser, UserStatus } from "../types/user";
 import { SocketId } from "../types/socket";
+import mongoose from "mongoose";
 
 // In-memory storage for active users (consider Redis for production scaling)
 let activeUsers: Map<SocketId, User> = new Map();
-let userSessions: Map<string, UserSession> = new Map(); // userId -> session
+let userSessions: Map<string, UserSession> = new Map(); // socketId -> session
 let typingUsers: Map<string, TypingUser[]> = new Map(); // roomId -> typing users
 
 /**
@@ -13,7 +14,7 @@ let typingUsers: Map<string, TypingUser[]> = new Map(); // roomId -> typing user
 export function addUser(user: User): void {
   activeUsers.set(user.socketId, user);
   
-  // Update session tracking
+  // Update session tracking with unique key per socket
   const session: UserSession = {
     userId: user.userId,
     userName: user.username,
@@ -24,7 +25,8 @@ export function addUser(user: User): void {
     lastActivity: new Date()
   };
   
-  userSessions.set(user.userId.toString(), session);
+  // Use socketId as key to ensure each connection is tracked separately
+  userSessions.set(user.socketId, session);
 }
 
 /**
@@ -34,7 +36,7 @@ export function removeUser(socketId: SocketId): User | undefined {
   const user = activeUsers.get(socketId);
   if (user) {
     activeUsers.delete(socketId);
-    userSessions.delete(user.userId.toString());
+    userSessions.delete(socketId); // Use socketId as key
     
     // Remove from typing users if present
     removeUserFromTyping(user.roomId, user.userId.toString());
@@ -74,6 +76,37 @@ export function getUsersInRoom(roomId: string): UserInRoom[] {
       cursorPosition: user.cursorPosition,
       socketId: user.socketId
     }));
+}
+
+/**
+ * Update user status
+ */
+export function updateUserStatus(socketId: SocketId, status: string): boolean {
+  const user = activeUsers.get(socketId);
+  if (user) {
+    user.activityStatus = status as UserStatus;
+    user.lastSeen = new Date();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Broadcast message to all users in a room
+ */
+export function broadcastToRoom(io: any, roomId: string, event: string, data: any, excludeSocketId?: SocketId): void {
+  const usersInRoom = getUsersInRoom(roomId);
+  
+  usersInRoom.forEach(user => {
+    if (excludeSocketId && user.socketId === excludeSocketId) {
+      return;
+    }
+    
+    const socket = io.sockets.sockets.get(user.socketId);
+    if (socket) {
+      socket.emit(event, data);
+    }
+  });
 }
 
 /**
@@ -213,7 +246,7 @@ export function updateUserActivity(socketId: SocketId): void {
   if (user) {
     user.lastSeen = new Date();
     
-    const session = userSessions.get(user.userId.toString());
+    const session = userSessions.get(socketId);
     if (session) {
       session.lastActivity = new Date();
     }

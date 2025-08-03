@@ -1,11 +1,11 @@
-import { ObjectId, Document } from "mongoose";
+import mongoose, { Document } from "mongoose";
 import { FileInfo } from "./filesystem";
 import { UserStatus } from "./user";
 
 // Room Database Schema Interface
 export interface IRoom extends Document {
-  _id: ObjectId;
-  userId: ObjectId; // Room creator
+  _id: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId; // Room creator
   id: string; // Unique room identifier
   name: string;
   description: string;
@@ -17,9 +17,9 @@ export interface IRoom extends Document {
   participants: number;
   files: FileInfo[];
   participantList: {
-    userId: ObjectId;
+    userId: mongoose.Types.ObjectId;
     name: string;
-    profilePicId?: ObjectId;
+    profilePicId?: mongoose.Types.ObjectId;
   }[];
   createdAt: Date;
   updatedAt: Date;
@@ -27,9 +27,9 @@ export interface IRoom extends Document {
 
 // Message Database Schema Interface
 export interface IMessage extends Document {
-  _id: ObjectId;
-  roomId: ObjectId;
-  senderId: ObjectId;
+  _id: mongoose.Types.ObjectId;
+  roomId: mongoose.Types.ObjectId;
+  senderId: mongoose.Types.ObjectId;
   senderName: string;
   content: string;
   timestamp: Date;
@@ -37,33 +37,40 @@ export interface IMessage extends Document {
   isEdited: boolean;
   editedAt?: Date;
   attachments?: {
-    fileId: ObjectId;
+    fileId: mongoose.Types.ObjectId;
     fileName: string;
     fileSize: number;
     mimeType: string;
   }[];
-  mentions?: ObjectId[]; // User IDs mentioned in message
+  mentions?: mongoose.Types.ObjectId[]; // User IDs mentioned in message
   reactions?: {
-    userId: ObjectId;
+    userId: mongoose.Types.ObjectId;
     emoji: string;
     timestamp: Date;
   }[];
-  replyTo?: ObjectId; // Message ID this is replying to
+  replyTo?: mongoose.Types.ObjectId; // Message ID this is replying to
   isDeleted: boolean;
   deletedAt?: Date;
 }
 
 // User Database Schema Interface (from user.ts but extended for database)
 export interface IUser extends Document {
-  _id: ObjectId;
+  _id: mongoose.Types.ObjectId;
   name: string;
   email: string;
   password: string;
-  profilePicId?: ObjectId;
+  profilePicId?: mongoose.Types.ObjectId;
   rememberMe: boolean;
   resetToken?: string;
   resetTokenExpiry?: Date;
   activityStatus: UserStatus;
+  currentRoomId?: string;
+  joinedRooms: {
+    roomId: string;
+    roomName: string;
+    lastJoined: Date;
+    joinCount: number;
+  }[];
   lastLogin?: Date;
   isEmailVerified: boolean;
   emailVerificationToken?: string;
@@ -91,8 +98,8 @@ export interface IUser extends Document {
 
 // Session Management
 export interface ISession extends Document {
-  _id: ObjectId;
-  userId: ObjectId;
+  _id: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId;
   sessionToken: string;
   deviceInfo: {
     userAgent: string;
@@ -108,14 +115,14 @@ export interface ISession extends Document {
 
 // Room Activity Log
 export interface IRoomActivity extends Document {
-  _id: ObjectId;
-  roomId: ObjectId;
-  userId: ObjectId;
+  _id: mongoose.Types.ObjectId;
+  roomId: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId;
   activityType: "join" | "leave" | "file_create" | "file_update" | "file_delete" | "message" | "invite";
   details: {
     fileName?: string;
-    messageId?: ObjectId;
-    invitedUserId?: ObjectId;
+    messageId?: mongoose.Types.ObjectId;
+    invitedUserId?: mongoose.Types.ObjectId;
     description?: string;
   };
   timestamp: Date;
@@ -125,10 +132,10 @@ export interface IRoomActivity extends Document {
 
 // File Collaboration History
 export interface ICollaborationHistory extends Document {
-  _id: ObjectId;
-  fileId: ObjectId;
-  roomId: ObjectId;
-  userId: ObjectId;
+  _id: mongoose.Types.ObjectId;
+  fileId: mongoose.Types.ObjectId;
+  roomId: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId;
   operation: "insert" | "delete" | "replace" | "format";
   position: number;
   length: number;
@@ -140,10 +147,10 @@ export interface ICollaborationHistory extends Document {
 
 // Room Invitations
 export interface IRoomInvitation extends Document {
-  _id: ObjectId;
-  roomId: ObjectId;
-  invitedBy: ObjectId;
-  invitedUser: ObjectId;
+  _id: mongoose.Types.ObjectId;
+  roomId: mongoose.Types.ObjectId;
+  invitedBy: mongoose.Types.ObjectId;
+  invitedUser: mongoose.Types.ObjectId;
   invitationType: "email" | "link" | "direct";
   invitationToken: string;
   status: "pending" | "accepted" | "declined" | "expired";
@@ -155,8 +162,8 @@ export interface IRoomInvitation extends Document {
 
 // Analytics and Statistics
 export interface IRoomStatistics extends Document {
-  _id: ObjectId;
-  roomId: ObjectId;
+  _id: mongoose.Types.ObjectId;
+  roomId: mongoose.Types.ObjectId;
   date: Date; // Daily statistics
   metrics: {
     activeUsers: number;
@@ -168,7 +175,7 @@ export interface IRoomStatistics extends Document {
     peakConcurrentUsers: number;
   };
   userActivity: {
-    userId: ObjectId;
+    userId: mongoose.Types.ObjectId;
     timeSpent: number; // in minutes
     messagesSet: number;
     filesModified: number;

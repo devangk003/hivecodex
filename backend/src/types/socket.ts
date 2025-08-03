@@ -1,59 +1,4 @@
-import { Socket } from "socket.io";
-
 export type SocketId = string;
-
-export enum SocketEvent {
-  // Room management
-  JOIN_REQUEST = "join-request",
-  JOIN_ACCEPTED = "join-accepted",
-  JOIN_ROOM = "joinRoom",
-  USER_JOINED = "user-joined",
-  USER_DISCONNECTED = "user-disconnected",
-  USER_OFFLINE = "offline",
-  USER_ONLINE = "online",
-  
-  // File system operations
-  SYNC_FILE_STRUCTURE = "sync-file-structure",
-  DIRECTORY_CREATED = "directory-created",
-  DIRECTORY_UPDATED = "directory-updated",
-  DIRECTORY_RENAMED = "directory-renamed",
-  DIRECTORY_DELETED = "directory-deleted",
-  FILE_CREATED = "file-created",
-  FILE_UPDATED = "file-updated",
-  FILE_RENAMED = "file-renamed",
-  FILE_DELETED = "file-deleted",
-  NEW_FILE = "newFile",
-  FILE_READ = "fileRead",
-  FILE_DELETE = "fileDelete",
-  
-  // Chat and messaging
-  SEND_MESSAGE = "send-message",
-  RECEIVE_MESSAGE = "receive-message",
-  MESSAGE = "message",
-  
-  // Real-time collaboration
-  COLLABORATIVE_CHANGE = "collaborative-change",
-  CURSOR_UPDATE = "cursor-update",
-  TYPING_START = "typing-start",
-  TYPING_PAUSE = "typing-pause",
-  TYPING_STOP = "typing-stop",
-  
-  // Drawing/Whiteboard
-  REQUEST_DRAWING = "request-drawing",
-  SYNC_DRAWING = "sync-drawing",
-  DRAWING_UPDATE = "drawing-update",
-  
-  // User management
-  USERNAME_EXISTS = "username-exists",
-  
-  // Error handling
-  ERROR = "error",
-  CONNECTION_ERROR = "connection_error",
-}
-
-export interface SocketContext {
-  socket: Socket;
-}
 
 export interface JoinRoomPayload {
   roomId: string;
@@ -67,6 +12,7 @@ export interface MessagePayload {
   userId: string;
   roomId: string;
   timestamp: string;
+  id?: string;
 }
 
 export interface FileOperationPayload {
@@ -94,17 +40,29 @@ export interface CursorUpdatePayload {
 }
 
 export interface TypingPayload {
-  cursorPosition: number;
-  fileName?: string;
   userId: string;
   userName: string;
-  isTyping: boolean;
+  roomId?: string;
+}
+
+export interface StatusChangePayload {
+  online: boolean;
+  userId?: string;
+  userName?: string;
+  timestamp?: string;
 }
 
 export interface DrawingPayload {
-  drawingData: any; // To be refined based on drawing implementation
+  drawingData: any;
   roomId: string;
   userId: string;
+  timestamp?: string;
+}
+
+export interface UserJoinedPayload {
+  userId: string;
+  userName: string;
+  timestamp: string;
 }
 
 export interface ErrorPayload {
@@ -118,38 +76,78 @@ export interface SocketData {
   userId?: string;
   userName?: string;
   isAuthenticated?: boolean;
+  joinedAt?: Date;
 }
 
-// Server-to-client events
+// Server-to-client events (what server sends to client)
 export interface ServerToClientEvents {
-  [SocketEvent.JOIN_ACCEPTED]: (data: { roomId: string }) => void;
-  [SocketEvent.USER_JOINED]: (data: { userName: string; userId: string }) => void;
-  [SocketEvent.USER_DISCONNECTED]: (data: { userName: string; userId: string }) => void;
-  [SocketEvent.MESSAGE]: (data: MessagePayload) => void;
-  [SocketEvent.COLLABORATIVE_CHANGE]: (data: CollaborativeChangePayload) => void;
-  [SocketEvent.CURSOR_UPDATE]: (data: CursorUpdatePayload) => void;
-  [SocketEvent.TYPING_START]: (data: TypingPayload) => void;
-  [SocketEvent.TYPING_STOP]: (data: TypingPayload) => void;
-  [SocketEvent.FILE_CREATED]: (data: FileOperationPayload) => void;
-  [SocketEvent.FILE_UPDATED]: (data: FileOperationPayload) => void;
-  [SocketEvent.FILE_DELETED]: (data: FileOperationPayload) => void;
-  [SocketEvent.SYNC_DRAWING]: (data: DrawingPayload) => void;
-  [SocketEvent.ERROR]: (data: ErrorPayload) => void;
+  "userJoined": (data: UserJoinedPayload) => void;
+  "userDisconnected": (data: UserJoinedPayload) => void;
+  "roomParticipants": (users: any[]) => void;
+  "message": (data: MessagePayload) => void;
+  "collaborative-change": (data: CollaborativeChangePayload) => void;
+  "cursor-update": (data: CursorUpdatePayload) => void;
+  "typing-start": (data: TypingPayload) => void;
+  "typing-stop": (data: TypingPayload) => void;
+  "typing-update": (data: TypingPayload & { isTyping: boolean }) => void;
+  "newFile": (data: FileOperationPayload) => void;
+  "fileRead": (data: FileOperationPayload) => void;
+  "fileDelete": (data: FileOperationPayload) => void;
+  "file-sync": (data: any) => void;
+  "request-file-sync": (data: any) => void;
+  "statusChange": (data: StatusChangePayload) => void;
+  "user-activity-status-update": (data: {
+    userId: string;
+    userName: string;
+    activityStatus: string;
+    timestamp: string;
+  }) => void;
+  "user-status-refresh": (data: {
+    userId: string;
+    userName: string;
+    activityStatus: string;
+    timestamp: string;
+    roomId?: string;
+  }) => void;
+  "drawing-update": (data: DrawingPayload) => void;
+  "request-drawing": (data: any) => void;
+  "sync-drawing": (data: DrawingPayload) => void;
+  "sync-file-structure": (data: any) => void;
+  "directory-created": (data: any) => void;
+  "directory-updated": (data: any) => void;
+  "directory-deleted": (data: any) => void;
+  "file-created": (data: any) => void;
+  "file-updated": (data: any) => void;
+  "file-renamed": (data: any) => void;
+  "error": (data: ErrorPayload) => void;
+  "ping": () => void;
 }
 
-// Client-to-server events
+// Client-to-server events (what client sends to server)
 export interface ClientToServerEvents {
-  [SocketEvent.JOIN_REQUEST]: (data: JoinRoomPayload) => void;
-  [SocketEvent.MESSAGE]: (data: MessagePayload) => void;
-  [SocketEvent.COLLABORATIVE_CHANGE]: (data: CollaborativeChangePayload) => void;
-  [SocketEvent.CURSOR_UPDATE]: (data: CursorUpdatePayload) => void;
-  [SocketEvent.TYPING_START]: (data: TypingPayload) => void;
-  [SocketEvent.TYPING_STOP]: (data: TypingPayload) => void;
-  [SocketEvent.NEW_FILE]: (data: FileOperationPayload) => void;
-  [SocketEvent.FILE_READ]: (data: FileOperationPayload) => void;
-  [SocketEvent.FILE_DELETE]: (data: FileOperationPayload) => void;
-  [SocketEvent.REQUEST_DRAWING]: (data: { roomId: string }) => void;
-  [SocketEvent.DRAWING_UPDATE]: (data: DrawingPayload) => void;
+  "joinRoom": (data: JoinRoomPayload) => void;
+  "message": (data: MessagePayload) => void;
+  "collaborative-change": (data: CollaborativeChangePayload) => void;
+  "cursor-update": (data: CursorUpdatePayload) => void;
+  "typing-start": (roomId: string) => void;
+  "typing-stop": (roomId: string) => void;
+  "newFile": (data: FileOperationPayload) => void;
+  "fileRead": (data: FileOperationPayload) => void;
+  "fileDelete": (data: FileOperationPayload) => void;
+  "file-sync": (data: any) => void;
+  "request-file-sync": (data: any) => void;
+  "statusChange": (data: StatusChangePayload) => void;
+  "drawing-update": (data: DrawingPayload) => void;
+  "request-drawing": (data: any) => void;
+  "sync-drawing": (data: DrawingPayload) => void;
+  "sync-file-structure": (data: any) => void;
+  "directory-created": (data: any) => void;
+  "directory-updated": (data: any) => void;
+  "directory-deleted": (data: any) => void;
+  "file-created": (data: any) => void;
+  "file-updated": (data: any) => void;
+  "file-renamed": (data: any) => void;
+  "pong": () => void;
 }
 
 // Inter-server events (for scaling)

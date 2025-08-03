@@ -28,6 +28,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -342,11 +343,13 @@ const Homepage = () => {
           >
             Settings
           </Button>
+          
           {/* Settings Modal */}
           <SettingsModal
             open={showSettingsModal}
             onClose={() => setShowSettingsModal(false)}
           />
+          
           {/* Hero Section */}
           <section className="w-full flex flex-col items-center mb-10">
             <h2 className="text-3xl md:text-4xl font-bold text-center mb-2 font-mono">
@@ -539,6 +542,9 @@ const Homepage = () => {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create New Room</DialogTitle>
+              <DialogDescription>
+                Set up a new collaborative coding room with custom settings.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -606,6 +612,9 @@ const Homepage = () => {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Join Room by ID</DialogTitle>
+              <DialogDescription>
+                Enter a room ID to join an existing collaborative session.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>

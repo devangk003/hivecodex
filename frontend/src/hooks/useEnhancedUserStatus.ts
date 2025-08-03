@@ -20,6 +20,10 @@ export const useEnhancedUserStatus = (userId?: string): UseEnhancedUserStatusRet
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   const [isPageVisible, setIsPageVisible] = useState(true);
   const [lastActivity, setLastActivity] = useState(Date.now());
+  const [lastStatusUpdate, setLastStatusUpdate] = useState(0);
+
+  // Rate limiting constants
+  const STATUS_UPDATE_COOLDOWN = 3000; // 3 seconds between status updates
 
   // Activity tracking
   const updateActivity = useCallback(() => {
@@ -38,8 +42,20 @@ export const useEnhancedUserStatus = (userId?: string): UseEnhancedUserStatusRet
       if (visible && currentRoomId) {
         setRoomStatus('in-room');
         updateActivity();
+        // Emit status update to socket
+        socketService.emitUserStatus(currentRoomId, 'in-room');
       } else if (!visible && currentRoomId) {
         setRoomStatus('away');
+        // Emit away status to socket
+        socketService.emitUserStatus(currentRoomId, 'away');
+      } else if (visible && !currentRoomId) {
+        setGlobalStatus('online');
+        // Update backend status
+        activityAPI.setStatus('online').catch(() => {});
+      } else if (!visible && !currentRoomId) {
+        setGlobalStatus('away');
+        // Update backend status
+        activityAPI.setStatus('away').catch(() => {});
       }
     };
 
@@ -86,15 +102,25 @@ export const useEnhancedUserStatus = (userId?: string): UseEnhancedUserStatusRet
   // Update global status (website-wide)
   const updateGlobalStatus = useCallback(async (status: GlobalUserStatus) => {
     try {
+      // Rate limiting
+      const now = Date.now();
+      if (now - lastStatusUpdate < STATUS_UPDATE_COOLDOWN) {
+        return; // Skip if too recent
+      }
+      setLastStatusUpdate(now);
+
       setGlobalStatus(status);
       
       // Update backend (optional - don't fail if endpoint doesn't exist)
-      try {
-        const activityStatus = status === 'online' ? 'Online' : 'Offline';
-        await activityAPI.setStatus(activityStatus);
-      } catch (apiError) {
-        console.warn('Backend activity status update failed:', apiError);
-        // Continue with local status update
+      // Only try to update backend if we're not already in an error state
+      if (navigator.onLine) {
+        try {
+          const activityStatus = status === 'online' ? 'Online' : 'Offline';
+          await activityAPI.setStatus(activityStatus);
+        } catch (apiError) {
+          // Silently fail - don't log to prevent console spam
+          // Backend endpoint might not be available
+        }
       }
       
       // Emit to all rooms if connected
@@ -102,9 +128,9 @@ export const useEnhancedUserStatus = (userId?: string): UseEnhancedUserStatusRet
         socketService.emitGlobalUserStatus(status);
       }
     } catch (error) {
-      console.error('Failed to update global status:', error);
+      // Silently fail to prevent infinite error loops
     }
-  }, []);
+  }, [lastStatusUpdate]);
 
   // Online/offline detection
   useEffect(() => {
@@ -150,23 +176,40 @@ export const useEnhancedUserStatus = (userId?: string): UseEnhancedUserStatusRet
 
   // Enter room
   const enterRoom = useCallback(async (roomId: string) => {
+    // Prevent rapid room changes
+    const now = Date.now();
+    if (now - lastStatusUpdate < STATUS_UPDATE_COOLDOWN) {
+      return; // Skip if too recent
+    }
+    setLastStatusUpdate(now);
+
     setCurrentRoomId(roomId);
     setRoomStatus('in-room');
+    setGlobalStatus('online'); // Set global status to online when entering room
     
-    // Update backend about room entry (optional)
+    // Update backend about room entry (optional) - with rate limiting
     try {
-      await activityAPI.setStatus('In Room');
+      // Only update if online and not in rapid succession
+      if (navigator.onLine) {
+        await activityAPI.setStatus('in-room');
+      }
     } catch (error) {
-      console.warn('Failed to update room status in backend:', error);
-      // Continue with local status update
+      // Silently fail to prevent console spam
     }
 
     // Emit room status
     socketService.emitUserStatus(roomId, 'in-room');
-  }, []);
+  }, [lastStatusUpdate]);
 
   // Leave room
   const leaveRoom = useCallback(async () => {
+    // Rate limiting
+    const now = Date.now();
+    if (now - lastStatusUpdate < STATUS_UPDATE_COOLDOWN) {
+      return; // Skip if too recent
+    }
+    setLastStatusUpdate(now);
+
     if (currentRoomId) {
       socketService.emitUserStatus(currentRoomId, 'offline');
     }
@@ -174,14 +217,15 @@ export const useEnhancedUserStatus = (userId?: string): UseEnhancedUserStatusRet
     setCurrentRoomId(null);
     setRoomStatus('online');
     
-    // Update backend (optional)
+    // Update backend (optional) - with rate limiting
     try {
-      await activityAPI.setStatus('Online');
+      if (navigator.onLine) {
+        await activityAPI.setStatus('Online');
+      }
     } catch (error) {
-      console.warn('Failed to update status in backend:', error);
-      // Continue with local status update
+      // Silently fail to prevent console spam
     }
-  }, [currentRoomId]);
+  }, [currentRoomId, lastStatusUpdate]);
 
   // Get current user status data
   const getUserStatus = useCallback((): UserStatusData | null => {
