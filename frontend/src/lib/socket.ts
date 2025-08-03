@@ -9,12 +9,22 @@ const SOCKET_URL = 'http://localhost:5000';
 class SocketService {
   socket: Socket | null = null;
   private roomId: string | null = null;
+  private static instance: SocketService;
   private lastJoinAttempt: { roomId: string; timestamp: number } | null = null;
   private readonly JOIN_COOLDOWN = 2000; // 2 seconds between join attempts
 
-  // Remove singleton pattern to allow multiple independent instances
   constructor() {
-    // Each instance is independent
+    if (SocketService.instance) {
+      return SocketService.instance;
+    }
+    SocketService.instance = this;
+  }
+
+  static getInstance(): SocketService {
+    if (!SocketService.instance) {
+      SocketService.instance = new SocketService();
+    }
+    return SocketService.instance;
   }
 
   isConnected(): boolean {
@@ -51,7 +61,7 @@ class SocketService {
       reconnectionDelayMax: 5000,
       randomizationFactor: 0.5,
       autoConnect: true,
-      forceNew: true, // Force new connection to prevent sharing
+      forceNew: false,
     });
 
     // Handle connection events
@@ -352,46 +362,6 @@ class SocketService {
     }
   }
 
-  onStatusChange(
-    callback: (data: {
-      userId: string;
-      userName: string;
-      online: boolean;
-      timestamp: string;
-    }) => void
-  ) {
-    if (this.socket) {
-      this.socket.on('statusChange', callback);
-    }
-  }
-
-  onUserActivityStatusUpdate(
-    callback: (data: {
-      userId: string;
-      userName: string;
-      activityStatus: string;
-      timestamp: string;
-    }) => void
-  ) {
-    if (this.socket) {
-      this.socket.on('user-activity-status-update', callback);
-    }
-  }
-
-  onUserStatusRefresh(
-    callback: (data: {
-      userId: string;
-      userName: string;
-      activityStatus: string;
-      timestamp: string;
-      roomId?: string;
-    }) => void
-  ) {
-    if (this.socket) {
-      this.socket.on('user-status-refresh', callback);
-    }
-  }
-
   // Collaboration
   sendCollaborativeChange(change: CollaborativeChange) {
     if (this.socket && this.roomId) {
@@ -466,9 +436,5 @@ class SocketService {
   }
 }
 
-// Export the class so it can be instantiated elsewhere
-export { SocketService };
-
-// Create a default instance for backward compatibility
-const socketService = new SocketService();
+const socketService = SocketService.getInstance();
 export default socketService;

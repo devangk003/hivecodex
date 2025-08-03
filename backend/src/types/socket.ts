@@ -96,19 +96,6 @@ export interface ServerToClientEvents {
   "file-sync": (data: any) => void;
   "request-file-sync": (data: any) => void;
   "statusChange": (data: StatusChangePayload) => void;
-  "user-activity-status-update": (data: {
-    userId: string;
-    userName: string;
-    activityStatus: string;
-    timestamp: string;
-  }) => void;
-  "user-status-refresh": (data: {
-    userId: string;
-    userName: string;
-    activityStatus: string;
-    timestamp: string;
-    roomId?: string;
-  }) => void;
   "drawing-update": (data: DrawingPayload) => void;
   "request-drawing": (data: any) => void;
   "sync-drawing": (data: DrawingPayload) => void;

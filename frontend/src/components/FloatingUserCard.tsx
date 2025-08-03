@@ -51,7 +51,7 @@ const FloatingUserCard: React.FC<{ user: User }> = ({ user }) => {
           <img
             src={
               user?.profilePicId
-                ? `/api/auth/profile/picture/${user.profilePicId}`
+                ? `/api/profile/picture/${user.profilePicId}`
                 : '/default-user.svg'
             }
             alt={user?.name || 'User'}
@@ -73,7 +73,7 @@ const FloatingUserCard: React.FC<{ user: User }> = ({ user }) => {
                   <img
                     src={
                       user?.profilePicId
-                        ? `/api/auth/profile/picture/${user.profilePicId}`
+                        ? `/api/profile/picture/${user.profilePicId}`
                         : '/default-user.svg'
                     }
                     alt={user?.name || 'User'}

@@ -71,6 +71,36 @@ export const userAPI = {
     }
   },
 
+  kickUser: async (roomId: string, userId: string) => {
+    try {
+      const response = await api.post(`/rooms/${roomId}/users/${userId}/kick`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to kick user:', error);
+      throw error;
+    }
+  },
+
+  updateUserRole: async (roomId: string, userId: string, role: string) => {
+    try {
+      const response = await api.put(`/rooms/${roomId}/users/${userId}/role`, { role });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to update user role:', error);
+      throw error;
+    }
+  },
+
+  inviteUserToRoom: async (roomId: string, email: string) => {
+    try {
+      const response = await api.post(`/rooms/${roomId}/invite`, { email });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to invite user:', error);
+      throw error;
+    }
+  },
+
   updateUserStatus: async (status: string, roomId?: string) => {
     try {
       const response = await api.put('/user/status', { status, roomId });
@@ -83,8 +113,8 @@ export const userAPI = {
 };
 
 // Activity Status API with rate limiting
-const lastStatusUpdate = { timestamp: 0 };
-const STATUS_UPDATE_COOLDOWN = 3000; // 3 seconds
+let lastActivityUpdate = 0;
+const ACTIVITY_UPDATE_COOLDOWN = 5000; // 5 seconds between updates
 
 export const activityAPI = {
   getStatus: async () => {
@@ -92,59 +122,26 @@ export const activityAPI = {
       const response = await api.get('/user/activity-status');
       return response.data.data.activityStatus; // Backend returns nested data
     } catch (error) {
-      console.warn('Failed to get user activity status:', error);
-      return 'online'; // fallback
-    }
-  },
-
-  // Get all users' activity status from backend (like fetching messages)
-  getAllUsersStatus: async () => {
-    try {
-      const response = await api.get('/users/activity-status');
-      return response.data.data;
-    } catch (error) {
-      console.warn('Failed to get all users activity status:', error);
-      return []; // fallback
+      // Silently return default status to prevent infinite retries
+      return 'Online'; // Default status
     }
   },
   setStatus: async (activityStatus: string) => {
-    // Rate limiting
-    const now = Date.now();
-    if (now - lastStatusUpdate.timestamp < STATUS_UPDATE_COOLDOWN) {
-      if (process.env.NODE_ENV === 'development') {
+    try {
+      // Rate limiting - prevent too frequent updates
+      const now = Date.now();
+      if (now - lastActivityUpdate < ACTIVITY_UPDATE_COOLDOWN) {
         return activityStatus; // Return without making API call
       }
-    }
-    try {
+      lastActivityUpdate = now;
+
       const response = await api.put('/user/activity-status', { activityStatus });
       return response.data.data.activityStatus; // Backend returns nested data
     } catch (error) {
-      lastStatusUpdate.timestamp = now;
+      // Silently return the requested status to prevent infinite retries
       return activityStatus; // Return the requested status as if it was set
     }
   },
-  
-  // Get user's joined rooms history
-  getJoinedRooms: async () => {
-    try {
-      const response = await api.get('/user/joined-rooms');
-      return response.data.data;
-    } catch (error) {
-      console.error('Failed to fetch joined rooms:', error);
-      return [];
-    }
-  },
-
-  // Get global user status across all rooms
-  getGlobalUserStatus: async () => {
-    try {
-      const response = await api.get('/users/global-status');
-      return response.data.data;
-    } catch (error) {
-      console.error('Failed to fetch global user status:', error);
-      return [];
-    }
-  }
 };
 
 export interface Room {
@@ -252,7 +249,7 @@ export const roomAPI = {
 
   getRoom: async (roomId: string) => {
     const response = await api.get(`/rooms/${roomId}`);
-    return response.data;
+    return response.data.data; // Extract the actual room data from the wrapped response
   },
 
   createRoom: async (

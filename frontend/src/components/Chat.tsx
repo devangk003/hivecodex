@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { Message, chatAPI, Reaction } from '@/lib/api';
+import socketService from '@/lib/socket';
 import { toast } from 'sonner';
 
 interface ChatProps {
@@ -25,7 +26,7 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
   const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
-  const { user, socketService } = useAuth(); // Get socketService from context
+  const { user } = useAuth();
 
   // Close emoji picker when clicking outside
   useEffect(() => {
@@ -161,10 +162,10 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
         // Only add if message doesn't already exist (avoid duplicates)
         const messageExists = prev.some(m => m.id === message.id);
         if (messageExists) {
-          console.log('Message already exists, ignoring socket update:', message.id);
+          console.log('Message already exists, ignoring socket update');
           return prev;
         }
-        console.log('Adding new message from socket:', message.id);
+        console.log('Adding new message from socket');
         return [...prev, message];
       });
     };
@@ -232,12 +233,8 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
       const messageText = newMessage.trim();
       setNewMessage('');
       
-      // Send message via HTTP API
-      const savedMessage = await chatAPI.sendMessage(roomId, messageText);
-      console.log('Message sent via HTTP, adding to local state:', savedMessage.id);
-      
-      // Add the message to local state immediately for better UX
-      setMessages(prev => [...prev, savedMessage]);
+      // Send message via HTTP API - let socket handle adding to UI
+      await chatAPI.sendMessage(roomId, messageText);
       
       socketService.stopTyping(roomId);
     } catch (error) {
@@ -363,10 +360,15 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                         <Avatar className="w-10 h-10 flex-shrink-0 mt-0.5">
                           {message.profilePicId ? (
                             <AvatarImage
-                              src={`/api/auth/profile/picture/${message.profilePicId}`}
+                              src={`/api/profile/picture/${message.profilePicId}`}
                               alt={message.sender}
                             />
-                          ) : null}
+                          ) : (
+                            <AvatarImage
+                              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(message.sender)}&background=5865f2&color=fff&size=40`}
+                              alt={message.sender}
+                            />
+                          )}
                           <AvatarFallback className="bg-[#5865f2] text-white font-medium">
                             {message.sender.charAt(0).toUpperCase()}
                           </AvatarFallback>

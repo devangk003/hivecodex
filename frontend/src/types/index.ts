@@ -28,6 +28,7 @@ export interface SelectedFile {
   name: string;
   content?: string;
   extension?: string;
+  language?: string;
   fileId: string;
   path: string;
 }

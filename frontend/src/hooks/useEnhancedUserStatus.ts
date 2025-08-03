@@ -42,20 +42,8 @@ export const useEnhancedUserStatus = (userId?: string): UseEnhancedUserStatusRet
       if (visible && currentRoomId) {
         setRoomStatus('in-room');
         updateActivity();
-        // Emit status update to socket
-        socketService.emitUserStatus(currentRoomId, 'in-room');
       } else if (!visible && currentRoomId) {
         setRoomStatus('away');
-        // Emit away status to socket
-        socketService.emitUserStatus(currentRoomId, 'away');
-      } else if (visible && !currentRoomId) {
-        setGlobalStatus('online');
-        // Update backend status
-        activityAPI.setStatus('online').catch(() => {});
-      } else if (!visible && !currentRoomId) {
-        setGlobalStatus('away');
-        // Update backend status
-        activityAPI.setStatus('away').catch(() => {});
       }
     };
 
@@ -185,13 +173,12 @@ export const useEnhancedUserStatus = (userId?: string): UseEnhancedUserStatusRet
 
     setCurrentRoomId(roomId);
     setRoomStatus('in-room');
-    setGlobalStatus('online'); // Set global status to online when entering room
     
     // Update backend about room entry (optional) - with rate limiting
     try {
       // Only update if online and not in rapid succession
       if (navigator.onLine) {
-        await activityAPI.setStatus('in-room');
+        await activityAPI.setStatus('In Room');
       }
     } catch (error) {
       // Silently fail to prevent console spam

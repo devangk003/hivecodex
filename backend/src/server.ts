@@ -396,41 +396,6 @@ app.get("/api/user/rooms", authenticateToken, async (req, res) => {
   }
 });
 
-// Get user's joined rooms history
-app.get("/api/user/joined-rooms", authenticateToken, async (req, res): Promise<any> => {
-  try {
-    await dbConnectionPromise;
-    const userId = (req as any).user.id;
-    
-    const user = await User.findById(userId).select('joinedRooms').lean();
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-        timestamp: new Date()
-      });
-    }
-
-    // Sort by last joined date (most recent first)
-    const sortedRooms = (user.joinedRooms || []).sort((a, b) => 
-      new Date(b.lastJoined).getTime() - new Date(a.lastJoined).getTime()
-    );
-
-    return res.json({
-      success: true,
-      data: sortedRooms,
-      timestamp: new Date()
-    });
-  } catch (error) {
-    console.error("Joined rooms fetch error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch joined rooms. Please try again later.",
-      timestamp: new Date()
-    });
-  }
-});
-
 // Get user activity status
 app.get("/api/user/activity-status", authenticateToken, async (req, res) => {
   try {
@@ -446,58 +411,6 @@ app.get("/api/user/activity-status", authenticateToken, async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: "Failed to fetch activity status. Please try again later.",
-      timestamp: new Date()
-    });
-  }
-});
-
-// Get user activity status
-app.get("/api/user/activity-status", authenticateToken, async (req, res): Promise<any> => {
-  try {
-    await dbConnectionPromise;
-    const user = await User.findById((req as any).user.id).select('activityStatus').lean();
-    
-    res.json({ 
-      success: true,
-      data: { activityStatus: user?.activityStatus || 'online' },
-      timestamp: new Date()
-    });
-  } catch (err) {
-    console.error("Get user activity status error:", err);
-    return res.status(500).json({ 
-      success: false,
-      message: "Failed to retrieve activity status",
-      timestamp: new Date()
-    });
-  }
-});
-
-// Get all users' activity status (for global status visibility)
-app.get("/api/users/activity-status", authenticateToken, async (req, res): Promise<any> => {
-  try {
-    await dbConnectionPromise;
-    const users = await User.find({})
-      .select('name activityStatus currentRoomId profilePicId')
-      .lean();
-    
-    const userStatusList = users.map(user => ({
-      userId: user._id.toString(),
-      userName: user.name,
-      activityStatus: user.activityStatus || 'offline',
-      currentRoomId: user.currentRoomId,
-      profilePicId: user.profilePicId
-    }));
-    
-    res.json({ 
-      success: true,
-      data: userStatusList,
-      timestamp: new Date()
-    });
-  } catch (err) {
-    console.error("Get users activity status error:", err);
-    return res.status(500).json({ 
-      success: false,
-      message: "Failed to retrieve users activity status",
       timestamp: new Date()
     });
   }
@@ -522,20 +435,6 @@ app.put("/api/user/activity-status", authenticateToken, async (req, res): Promis
       { activityStatus }, 
       { new: true }
     );
-
-    // Broadcast status refresh event to all connected users (like message broadcast)
-    const userId = (req as any).user.id;
-    const userName = (req as any).user.name;
-    
-    // Emit refresh event so all clients fetch latest status from backend
-    io.emit('user-status-refresh', {
-      userId,
-      userName,
-      activityStatus,
-      timestamp: new Date().toISOString()
-    });
-    
-    console.log(`📡 Broadcasted status refresh for user ${userName} via HTTP API`);
     
     res.json({ 
       success: true,
@@ -621,6 +520,8 @@ app.post("/api/rooms", authenticateToken, async (req, res): Promise<any> => {
         userId: (req as any).user.id,
         name: (req as any).user.name,
         profilePicId: null,
+        role: 'owner',
+        joinedAt: new Date()
       }],
     });
 
@@ -677,7 +578,9 @@ app.post("/api/rooms/:roomId/join", authenticateToken, async (req, res): Promise
       room.participantList.push({
         userId: user._id,
         name: user.name,
-        profilePicId: user.profilePicId
+        profilePicId: user.profilePicId,
+        role: 'member',
+        joinedAt: new Date()
       });
       
       room.participants = room.participantList.length;
@@ -975,42 +878,6 @@ app.get("/api/users/:userId/profile", authenticateToken, async (req, res): Promi
   }
 });
 
-// Get global user status (across all rooms)
-app.get("/api/users/global-status", authenticateToken, async (req, res): Promise<any> => {
-  try {
-    await dbConnectionPromise;
-    
-    // Get all users with their activity status and current room
-    const users = await User.find({})
-      .select('name email profilePicId activityStatus currentRoomId joinedRooms lastLogin')
-      .lean();
-
-    const usersWithStatus = users.map(user => ({
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      profilePicId: user.profilePicId,
-      activityStatus: user.activityStatus || "offline",
-      currentRoomId: user.currentRoomId,
-      isOnline: user.activityStatus === UserStatus.ONLINE || user.activityStatus === UserStatus.IN_ROOM,
-      lastLogin: user.lastLogin
-    }));
-
-    return res.json({
-      success: true,
-      data: usersWithStatus,
-      timestamp: new Date()
-    });
-  } catch (error) {
-    console.error("Global user status fetch error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch global user status. Please try again later.",
-      timestamp: new Date()
-    });
-  }
-});
-
 // Get users in a room
 app.get("/api/rooms/:roomId/users", authenticateToken, async (req, res): Promise<any> => {
   try {
@@ -1027,21 +894,34 @@ app.get("/api/rooms/:roomId/users", authenticateToken, async (req, res): Promise
     }
 
     // Get participant details with user info
-    const userIds = room.participantList.map(p => p.userId);
-    const users = await User.find({ _id: { $in: userIds } }).select("name email profilePicId activityStatus");
-    
-    const usersWithStatus = users.map(user => ({
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      profilePicId: user.profilePicId,
-      activityStatus: user.activityStatus || "offline",
-      online: true // This would come from socket connection tracking
-    }));
+    const participantsWithUserInfo = await Promise.all(
+      room.participantList.map(async (participant) => {
+        const user = await User.findById(participant.userId).select("name email profilePicId activityStatus lastSeen");
+        return {
+          userId: user ? {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            profilePicId: user.profilePicId,
+            activityStatus: user.activityStatus || "offline",
+            lastSeen: user.lastSeen
+          } : {
+            _id: participant.userId,
+            name: participant.name || "Unknown User",
+            email: null,
+            profilePicId: participant.profilePicId,
+            activityStatus: "offline",
+            lastSeen: new Date()
+          },
+          role: participant.role,
+          joinedAt: participant.joinedAt
+        };
+      })
+    );
 
     res.json({
       success: true,
-      data: usersWithStatus,
+      data: participantsWithUserInfo,
       timestamp: new Date()
     });
   } catch (error) {
@@ -1128,6 +1008,231 @@ app.post("/api/rooms/:roomId/leave", authenticateToken, async (req, res): Promis
   }
 });
 
+// User Management Endpoints
+
+// Kick user from room
+app.post("/api/rooms/:roomId/users/:userId/kick", authenticateToken, async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { roomId, userId } = req.params;
+    const requesterId = (req as any).user.id;
+
+    const room = await Room.findOne({ id: roomId });
+    if (!room) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Room not found",
+        timestamp: new Date()
+      });
+    }
+
+    // Check if requester has permission (owner or admin)
+    const requesterParticipant = room.participantList.find(p => p.userId.toString() === requesterId);
+    if (!requesterParticipant || !['owner', 'admin'].includes(requesterParticipant.role)) {
+      return res.status(403).json({ 
+        success: false,
+        message: "Insufficient permissions to kick users",
+        timestamp: new Date()
+      });
+    }
+
+    // Remove user from participants
+    const targetParticipant = room.participantList.find(p => p.userId.toString() === userId);
+    if (!targetParticipant) {
+      return res.status(404).json({ 
+        success: false,
+        message: "User not found in room",
+        timestamp: new Date()
+      });
+    }
+
+    // Can't kick the owner
+    if (targetParticipant.role === 'owner') {
+      return res.status(403).json({ 
+        success: false,
+        message: "Cannot kick room owner",
+        timestamp: new Date()
+      });
+    }
+
+    room.participantList = room.participantList.filter(p => p.userId.toString() !== userId);
+    room.participants = Math.max(0, room.participants - 1);
+    await room.save();
+
+    res.json({
+      success: true,
+      message: "User kicked successfully",
+      timestamp: new Date()
+    });
+  } catch (error) {
+    console.error("Kick user error:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: "Failed to kick user. Please try again later.",
+      timestamp: new Date()
+    });
+  }
+});
+
+// Update user role in room
+app.put("/api/rooms/:roomId/users/:userId/role", authenticateToken, async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { roomId, userId } = req.params;
+    const { role } = req.body;
+    const requesterId = (req as any).user.id;
+
+    if (!['admin', 'member', 'viewer'].includes(role)) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Invalid role. Must be admin, member, or viewer",
+        timestamp: new Date()
+      });
+    }
+
+    const room = await Room.findOne({ id: roomId });
+    if (!room) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Room not found",
+        timestamp: new Date()
+      });
+    }
+
+    // Check if requester has permission (owner)
+    const requesterParticipant = room.participantList.find(p => p.userId.toString() === requesterId);
+    if (!requesterParticipant || requesterParticipant.role !== 'owner') {
+      return res.status(403).json({ 
+        success: false,
+        message: "Only room owner can change user roles",
+        timestamp: new Date()
+      });
+    }
+
+    // Find and update user role
+    const targetParticipant = room.participantList.find(p => p.userId.toString() === userId);
+    if (!targetParticipant) {
+      return res.status(404).json({ 
+        success: false,
+        message: "User not found in room",
+        timestamp: new Date()
+      });
+    }
+
+    // Can't change owner role
+    if (targetParticipant.role === 'owner') {
+      return res.status(403).json({ 
+        success: false,
+        message: "Cannot change owner role",
+        timestamp: new Date()
+      });
+    }
+
+    targetParticipant.role = role;
+    await room.save();
+
+    res.json({
+      success: true,
+      message: "User role updated successfully",
+      data: { userId, role },
+      timestamp: new Date()
+    });
+  } catch (error) {
+    console.error("Update user role error:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: "Failed to update user role. Please try again later.",
+      timestamp: new Date()
+    });
+  }
+});
+
+// Invite user to room
+app.post("/api/rooms/:roomId/invite", authenticateToken, async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { roomId } = req.params;
+    const { email } = req.body;
+    const requesterId = (req as any).user.id;
+
+    if (!email) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Email is required",
+        timestamp: new Date()
+      });
+    }
+
+    const room = await Room.findOne({ id: roomId });
+    if (!room) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Room not found",
+        timestamp: new Date()
+      });
+    }
+
+    // Check if requester is in the room
+    const requesterParticipant = room.participantList.find(p => p.userId.toString() === requesterId);
+    if (!requesterParticipant) {
+      return res.status(403).json({ 
+        success: false,
+        message: "You must be a room member to invite users",
+        timestamp: new Date()
+      });
+    }
+
+    // Find user by email
+    const targetUser = await User.findOne({ email });
+    if (!targetUser) {
+      return res.status(404).json({ 
+        success: false,
+        message: "User not found",
+        timestamp: new Date()
+      });
+    }
+
+    // Check if user is already in room
+    const existingParticipant = room.participantList.find(p => p.userId.toString() === targetUser._id.toString());
+    if (existingParticipant) {
+      return res.status(400).json({ 
+        success: false,
+        message: "User is already in the room",
+        timestamp: new Date()
+      });
+    }
+
+    // Add user to room
+    room.participantList.push({
+      userId: targetUser._id,
+      name: targetUser.name,
+      profilePicId: targetUser.profilePicId,
+      role: 'member',
+      joinedAt: new Date()
+    });
+    room.participants += 1;
+    await room.save();
+
+    res.json({
+      success: true,
+      message: "User invited successfully",
+      data: {
+        userId: targetUser._id,
+        name: targetUser.name,
+        email: targetUser.email
+      },
+      timestamp: new Date()
+    });
+  } catch (error) {
+    console.error("Invite user error:", error);
+    return res.status(500).json({ 
+      success: false,
+      message: "Failed to invite user. Please try again later.",
+      timestamp: new Date()
+    });
+  }
+});
+
 // Fix file download endpoint to match frontend expectation
 app.get("/api/files/:fileId/download", async (req, res) => {
   try {
@@ -1147,6 +1252,70 @@ app.get("/api/files/:fileId/download", async (req, res) => {
     res
       .status(500)
       .json({ message: "Failed to download file. Please try again later." });
+  }
+});
+
+// Profile picture endpoint for consistent frontend access
+app.get("/api/profile/picture/:pictureId", async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { pictureId } = req.params;
+    
+    if (!gridfsBucket) {
+      return res.status(500).json({ message: "File storage not available" });
+    }
+    
+    const downloadStream = gridfsBucket.openDownloadStream(
+      new ObjectId(pictureId),
+    );
+
+    downloadStream.on("error", () => {
+      return res.status(404).json({ message: "Profile picture not found" });
+    });
+
+    // Set proper headers for images
+    downloadStream.on("file", (file) => {
+      res.set("Content-Type", file.metadata?.mimetype || "image/jpeg");
+      res.set("Cache-Control", "public, max-age=31536000"); // 1 year cache
+    });
+
+    downloadStream.pipe(res);
+    return; // Explicit return for the success path
+  } catch (error) {
+    console.error("Profile picture download error:", error);
+    return res.status(500).json({ message: "Failed to load profile picture" });
+  }
+});
+
+// Alternative endpoint for backward compatibility
+app.get("/api/files/:fileId", async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { fileId } = req.params;
+    
+    if (!gridfsBucket) {
+      return res.status(500).json({ message: "File storage not available" });
+    }
+    
+    const downloadStream = gridfsBucket.openDownloadStream(
+      new ObjectId(fileId),
+    );
+
+    downloadStream.on("error", () => {
+      return res.status(404).json({ message: "File not found" });
+    });
+
+    // Set proper headers for images
+    downloadStream.on("file", (file) => {
+      res.set("Content-Type", file.metadata?.mimetype || "application/octet-stream");
+      res.set("Cache-Control", "public, max-age=31536000"); // 1 year cache
+    });
+
+    downloadStream.pipe(res);
+    return; // Explicit return for the success path
+  } catch (error) {
+    console.error("File download error:", error);
+    return res.status(500).json({ message: "Failed to load file" });
   }
 });
 
@@ -1334,22 +1503,29 @@ app.get("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Prom
     }
 
     console.log(`📚 [${timestamp}] Fetching messages from database`);
-    // Get messages for the room and populate sender info
+    // Get messages for the room
     const messages = await Message.find({ roomId: room._id })
-      .populate('senderId', 'profilePicId')
       .sort({ timestamp: 1 })
       .lean();
 
     console.log(`✅ [${timestamp}] Found ${messages.length} messages`);
 
+    // Get user profile pictures for all message senders
+    const senderIds = [...new Set(messages.map((msg: any) => msg.senderId.toString()))];
+    const users = await User.find({ _id: { $in: senderIds } }).select("_id profilePicId").lean();
+    const userProfilePics = users.reduce((acc: any, user: any) => {
+      acc[user._id.toString()] = user.profilePicId?.toString() || null;
+      return acc;
+    }, {});
+
     // Format messages for response
     const formattedMessages = messages.map((msg: any) => ({
       id: msg._id.toString(),
       sender: msg.senderName,
-      senderId: msg.senderId._id ? msg.senderId._id.toString() : msg.senderId.toString(),
+      senderId: msg.senderId.toString(),
       text: msg.content,
       timestamp: msg.timestamp.toISOString(),
-      profilePicId: msg.senderId?.profilePicId,
+      profilePicId: userProfilePics[msg.senderId.toString()] || null,
       reactions: msg.reactions || []
     }));
 
@@ -1378,13 +1554,6 @@ app.post("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Pro
 
     console.log(`🔍 [${timestamp}] Looking up room: ${roomId}`);
 
-    // Get user information including profilePicId
-    const user = await User.findById(userId).lean();
-    if (!user) {
-      console.log(`❌ [${timestamp}] User not found: ${userId}`);
-      return res.status(404).json({ message: "User not found" });
-    }
-
     // Check if user is part of the room
     const room = await Room.findOne({ id: roomId });
     if (!room) {
@@ -1400,6 +1569,10 @@ app.post("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Pro
     }
 
     console.log(`💾 [${timestamp}] Creating message document`);
+    
+    // Get user info including profile picture
+    const user = await User.findById(userId).select("profilePicId");
+    
     // Create and save message
     const newMessage = new Message({
       roomId: room._id,
@@ -1421,24 +1594,13 @@ app.post("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Pro
       senderId: newMessage.senderId.toString(),
       text: newMessage.content,
       timestamp: newMessage.timestamp.toISOString(),
-      profilePicId: user.profilePicId,
+      profilePicId: user?.profilePicId?.toString() || null,
       reactions: []
     };
 
-    // Broadcast to other users in the room for real-time updates (exclude sender)
-    console.log(`📡 [${timestamp}] Broadcasting message to room: ${roomId} (excluding sender)`);
-    
-    // Find the sender's socket and broadcast to others
-    const sockets = await (io as any).in(roomId).fetchSockets();
-    const senderSocket = sockets.find((socket: any) => socket.data?.userId === userId);
-    
-    if (senderSocket) {
-      // Broadcast to room excluding the sender
-      senderSocket.to(roomId).emit("message", formattedMessage);
-    } else {
-      // Fallback: broadcast to all if sender socket not found
-      (io as any).to(roomId).emit("message", formattedMessage);
-    }
+    // Broadcast to other users in the room for real-time updates
+    console.log(`📡 [${timestamp}] Broadcasting message to room: ${roomId}`);
+    (io as any).to(roomId).emit("message", formattedMessage);
 
     console.log(`✅ [${timestamp}] Message posted successfully`);
     res.status(201).json(formattedMessage);

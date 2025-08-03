@@ -343,13 +343,11 @@ const Homepage = () => {
           >
             Settings
           </Button>
-          
           {/* Settings Modal */}
           <SettingsModal
             open={showSettingsModal}
             onClose={() => setShowSettingsModal(false)}
           />
-          
           {/* Hero Section */}
           <section className="w-full flex flex-col items-center mb-10">
             <h2 className="text-3xl md:text-4xl font-bold text-center mb-2 font-mono">

@@ -5,8 +5,7 @@ export enum UserStatus {
   OFFLINE = "offline",
   AWAY = "away",
   BUSY = "busy",
-  IDLE = "idle",
-  IN_ROOM = "in-room"
+  IDLE = "idle"
 }
 
 export enum UserConnectionStatus {

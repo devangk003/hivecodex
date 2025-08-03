@@ -44,7 +44,7 @@ interface User {
   activity?: string;
 }
 
-interface UserStatusPanelProps {
+interface ActivityPanelProps {
   participants: RoomParticipant[];
   onClose?: () => void;
   roomId?: string;
@@ -53,9 +53,8 @@ interface UserStatusPanelProps {
 const getStatusColor = (status: 'in-room' | 'away' | 'offline' | 'online') => {
   switch (status) {
     case 'in-room':
-      return '#43a25a'; // Green for current room
     case 'online':
-      return '#7CB342'; // Lighter green for online elsewhere
+      return '#43a25a';
     case 'away':
       return '#f0b132';
     case 'offline':
@@ -65,14 +64,10 @@ const getStatusColor = (status: 'in-room' | 'away' | 'offline' | 'online') => {
   }
 };
 
-const getStatusText = (status: 'in-room' | 'away' | 'offline' | 'online', currentRoomId?: string, participantRoomId?: string) => {
+const getStatusText = (status: 'in-room' | 'away' | 'offline' | 'online') => {
   switch (status) {
     case 'in-room':
-      if (currentRoomId === participantRoomId) {
-        return 'In This Room';
-      } else {
-        return 'In a Room';
-      }
+      return 'In Room';
     case 'online':
       return 'Online';
     case 'away':
@@ -99,13 +94,13 @@ const UserAvatar: React.FC<{ participant: RoomParticipant; size?: number }> = ({
       >
         {participant.profilePicId ? (
           <img
-            src={`/api/auth/profile/picture/${participant.profilePicId}`}
+            src={`/api/files/${participant.profilePicId}`}
             alt={participant.name}
             className="w-full h-full object-cover"
           />
         ) : (
           <div className="w-full h-full bg-discord-primary flex items-center justify-center text-white font-medium">
-            {participant.name ? participant.name.charAt(0).toUpperCase() : '?'}
+            {participant.name.charAt(0).toUpperCase()}
           </div>
         )}
       </div>
@@ -119,7 +114,7 @@ const UserAvatar: React.FC<{ participant: RoomParticipant; size?: number }> = ({
   );
 };
 
-export const UserStatusPanel: React.FC<UserStatusPanelProps> = ({
+export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   participants,
   onClose,
   roomId,
@@ -167,20 +162,20 @@ export const UserStatusPanel: React.FC<UserStatusPanelProps> = ({
 
   // Separate participants by status
   const onlineParticipants = participants.filter(
-    p => p.status === 'online' || p.status === 'in-room'
+    p => p.isOnline && p.status === 'online'
   );
   const awayParticipants = participants.filter(
-    p => p.status === 'away'
+    p => p.isOnline && p.status === 'away'
   );
   const offlineParticipants = participants.filter(
-    p => p.status === 'offline' || (!p.isOnline && p.status !== 'away')
+    p => !p.isOnline || p.status === 'offline'
   );
 
   const totalOnline = onlineParticipants.length + awayParticipants.length;
   const totalParticipants = participants.length;
 
   const handleStatusChange = (newStatus: UserStatus) => {
-    console.log('UserStatusPanel - handleStatusChange called with:', newStatus);
+    console.log('ActivityPanel - handleStatusChange called with:', newStatus);
     setStatus(newStatus);
   };
 
@@ -215,11 +210,8 @@ export const UserStatusPanel: React.FC<UserStatusPanelProps> = ({
           <span
             className={`text-sm font-medium ${isOffline ? 'text-muted-foreground' : 'text-foreground'} truncate`}
           >
-            {participant.name || 'Unknown User'}
+            {participant.name}
           </span>
-          <div className="text-xs text-muted-foreground">
-            {getStatusText(participant.status, roomId, participant.currentRoomId)}
-          </div>
         </div>
       </div>
     </div>
@@ -230,7 +222,7 @@ export const UserStatusPanel: React.FC<UserStatusPanelProps> = ({
       <div className="p-4 border-b border-border flex-shrink-0">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">
-            User Status ({onlineParticipants.length} Online,{' '}
+            Participants ({onlineParticipants.length} Online,{' '}
             {awayParticipants.length} Away, {offlineParticipants.length}{' '}
             Offline)
           </h2>

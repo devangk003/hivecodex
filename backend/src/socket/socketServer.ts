@@ -3,7 +3,8 @@ import {
   ServerToClientEvents, 
   ClientToServerEvents, 
   InterServerEvents, 
-  SocketData
+  SocketData,
+  MessagePayload
 } from "../types/socket";
 import {
   addUser,
@@ -113,43 +114,9 @@ export function initializeSocketHandlers(
         addUser(user);
 
         // Update user status in database
-        const updatedUser = await User.findByIdAndUpdate(
-          userId, 
-          { 
-            activityStatus: UserStatus.IN_ROOM,
-            currentRoomId: roomId,
-            lastLogin: new Date()
-          },
-          { new: true }
-        );
-
-        // Update joined rooms history
-        if (updatedUser) {
-          const existingRoomIndex = updatedUser.joinedRooms?.findIndex(
-            room => room.roomId === roomId
-          );
-
-          if (existingRoomIndex !== undefined && existingRoomIndex >= 0) {
-            // Update existing room entry
-            updatedUser.joinedRooms[existingRoomIndex].lastJoined = new Date();
-            updatedUser.joinedRooms[existingRoomIndex].joinCount += 1;
-          } else {
-            // Add new room to history
-            const room = await Room.findOne({ id: roomId });
-            if (room) {
-              if (!updatedUser.joinedRooms) {
-                updatedUser.joinedRooms = [];
-              }
-              updatedUser.joinedRooms.push({
-                roomId: roomId,
-                roomName: room.name,
-                lastJoined: new Date(),
-                joinCount: 1
-              });
-            }
-          }
-          await updatedUser.save();
-        }
+        await User.findByIdAndUpdate(userId, { 
+          activityStatus: "online" 
+        });
 
         // Get room details
         const room = await Room.findOne({ id: roomId });
@@ -165,7 +132,9 @@ export function initializeSocketHandlers(
               room.participantList.push({
                 userId: new mongoose.Types.ObjectId(userId),
                 name: userName,
-                profilePicId: user.profilePicId
+                profilePicId: user.profilePicId,
+                role: 'member',
+                joinedAt: new Date()
               });
               room.participants = room.participantList.length;
               await room.save();
@@ -181,112 +150,8 @@ export function initializeSocketHandlers(
         });
 
         // Send updated participant list to everyone in the room
-        // Include all users who have ever joined this room with their current status
-        const roomData = await Room.findOne({ id: roomId });
-        if (roomData) {
-          const participantIds = roomData.participantList.map(p => p.userId);
-          console.log(`🔍 [${timestamp}] Debug participant lookup:`, {
-            roomId,
-            participantListLength: roomData.participantList.length,
-            participantIds: participantIds.map(id => id?.toString()),
-            participantListRaw: roomData.participantList
-          });
-          
-          const participantUsers = await User.find({ _id: { $in: participantIds } })
-            .select('name profilePicId activityStatus currentRoomId')
-            .lean();
-
-          console.log(`🔍 [${timestamp}] Debug user lookup results:`, {
-            foundUsers: participantUsers.length,
-            expectedUsers: participantIds.length,
-            users: participantUsers.map(u => ({
-              id: u._id?.toString(),
-              name: u.name,
-              profilePicId: u.profilePicId,
-              activityStatus: u.activityStatus
-            }))
-          });
-
-          const participantsWithStatus = participantUsers
-            .filter(user => user._id && user.name) // Filter out users with missing essential data
-            .map(user => {
-            const userStatus = user.activityStatus || 'offline';
-            
-            // Map backend UserStatus to frontend status types
-            const getGlobalStatus = (status: string): 'online' | 'offline' | 'away' => {
-              switch (status) {
-                case 'online':
-                case 'busy':
-                case 'idle':
-                case 'in-room':
-                  return 'online';
-                case 'away':
-                  return 'away';
-                default:
-                  return 'offline';
-              }
-            };
-
-            const getRoomStatus = (status: string, currentRoomId?: string): 'online' | 'away' | 'in-room' | 'offline' => {
-              if (currentRoomId === roomId) {
-                // User is in this room
-                switch (status) {
-                  case 'online':
-                  case 'busy':
-                  case 'idle':
-                  case 'in-room':
-                    return 'in-room';
-                  case 'away':
-                    return 'away';
-                  default:
-                    return 'offline';
-                }
-              } else {
-                // User is not in this room
-                switch (status) {
-                  case 'online':
-                  case 'busy':
-                  case 'idle':
-                    return 'online';
-                  case 'away':
-                    return 'away';
-                  case 'in-room':
-                    return 'in-room'; // They're in a different room
-                  default:
-                    return 'offline';
-                }
-              }
-            };
-
-            const globalStatus = getGlobalStatus(userStatus);
-            const roomStatus = getRoomStatus(userStatus, user.currentRoomId);
-            const isOnline = globalStatus === 'online' || globalStatus === 'away';
-            
-            return {
-              userId: user._id,
-              userName: user.name,
-              profilePicId: user.profilePicId,
-              globalStatus: globalStatus,
-              roomStatus: roomStatus,
-              currentRoomId: user.currentRoomId,
-              lastSeen: new Date(),
-              isInSameRoom: user.currentRoomId === roomId
-            };
-          });
-
-          console.log(`🔍 [${timestamp}] Debug final participants data:`, {
-            participantsWithStatusLength: participantsWithStatus.length,
-            participantsWithStatus: participantsWithStatus.map(p => ({
-              userId: p.userId?.toString(),
-              userName: p.userName,
-              profilePicId: p.profilePicId,
-              globalStatus: p.globalStatus,
-              roomStatus: p.roomStatus
-            }))
-          });
-
-          io.to(roomId).emit("roomParticipants", participantsWithStatus);
-        }
+        const participants = getUsersInRoom(roomId);
+        io.to(roomId).emit("roomParticipants", participants);
 
         console.log(`User ${userName} joined room ${roomId} successfully`);
         
@@ -296,13 +161,79 @@ export function initializeSocketHandlers(
       }
     });
 
+    // Chat message handler
+    socket.on("message", async (msg) => {
+      const timestamp = new Date().toISOString();
+      console.log(`\n💬 [${timestamp}] MESSAGE RECEIVED VIA SOCKET`);
+      console.log(`🔗 Socket: ${socket.id}`);
+      console.log(`📝 Message: ${JSON.stringify(msg, null, 2)}`);
+      
+      try {
+        const { roomId, userId, userName } = socket.data || {};
+        if (!roomId || !userId) {
+          console.log(`❌ [${timestamp}] User not in room - Socket data:`, socket.data);
+          socket.emit("error", { message: "User not in room" });
+          return;
+        }
+
+        console.log(`✅ [${timestamp}] Processing message from user ${userId} (${userName}) in room ${roomId}`);
+
+        // Find room by string ID and get mongoose.Types.ObjectId
+        const room = await Room.findOne({ id: roomId });
+        if (!room) {
+          console.log(`❌ [${timestamp}] Room not found: ${roomId}`);
+          socket.emit("error", { message: "Room not found" });
+          return;
+        }
+
+        console.log(`💾 [${timestamp}] Saving message to database`);
+        
+        // Save message to database - using MessagePayload format
+        const messageContent = msg.message;
+        const senderName = msg.userName || userName;
+        
+        const message = new Message({
+          roomId: room._id,
+          senderId: new mongoose.Types.ObjectId(userId),
+          senderName: senderName,
+          content: messageContent,
+          timestamp: new Date(),
+          messageType: "text",
+          isEdited: false
+        });
+
+        await message.save();
+        console.log(`✅ [${timestamp}] Message saved with ID: ${message._id}`);
+
+        // Format message for broadcasting according to MessagePayload interface
+        const formattedMessage: MessagePayload = {
+          id: message._id.toString(),
+          message: message.content,
+          userName: message.senderName,
+          userId: message.senderId.toString(),
+          roomId: roomId,
+          timestamp: message.timestamp.toISOString()
+        };
+
+        console.log(`📡 [${timestamp}] Broadcasting message to room: ${roomId}`);
+        
+        // Broadcast to all users in the room
+        io.to(roomId).emit("message", formattedMessage);
+        
+        console.log(`✅ [${timestamp}] Message broadcasted successfully`);
+      } catch (error) {
+        console.error(`💥 [${timestamp}] Error handling message:`, error);
+        socket.emit("error", { message: "Failed to send message" });
+      }
+    });
+
     // Typing indicators
     socket.on("typing-start", (roomId) => {
       const { userId, userName } = socket.data || {};
       if (!userId || !userName) return;
 
       setUserTyping(socket.id, true);
-      socket.to(roomId).emit("typing-update", { userId, userName, isTyping: true });
+      socket.to(roomId).emit("typing-start", { userId, userName });
       updateUserActivity(socket.id);
     });
 
@@ -311,7 +242,7 @@ export function initializeSocketHandlers(
       if (!userId || !userName) return;
 
       setUserTyping(socket.id, false);
-      socket.to(roomId).emit("typing-update", { userId, userName, isTyping: false });
+      socket.to(roomId).emit("typing-stop", { userId, userName });
       updateUserActivity(socket.id);
     });
 
@@ -377,39 +308,27 @@ export function initializeSocketHandlers(
     });
 
     // Status changes
-    socket.on("statusChange", async ({ online }) => {
+    socket.on("statusChange", ({ online }) => {
       const { roomId, userId, userName } = socket.data || {};
-      if (!roomId || !userId || !userName) return;
+      if (!roomId || !userId) return;
 
-      const activityStatus = online ? UserStatus.IN_ROOM : UserStatus.OFFLINE;
+      const status = online ? "online" : "offline";
       
-      try {
-        // Update user status in database (like message persistence)
-        await User.findByIdAndUpdate(userId, { activityStatus });
-        
-        console.log(`✅ User ${userName} (${userId}) status updated to: ${activityStatus}`);
-        
-        // Broadcast refresh event to ALL connected users (like message broadcast)
-        io.emit('user-status-refresh', {
-          userId,
-          userName,
-          activityStatus,
-          timestamp: new Date().toISOString(),
-          roomId
-        });
-        
-        console.log(`📡 Broadcasted status refresh for user ${userName} to all connected clients`);
-        
-      } catch (error) {
-        console.error("Error updating user status:", error);
-      }
-      
-      // Update user activity in memory
+      // Update user status in memory and database
       updateUserActivity(socket.id);
+      User.findByIdAndUpdate(userId, { activityStatus: status }).catch(console.error);
+
+      // Broadcast status change
+      socket.to(roomId).emit("statusChange", {
+        userId,
+        userName,
+        online,
+        timestamp: new Date().toISOString()
+      });
     });
 
     // Disconnect handler
-    socket.on("disconnect", async (reason) => {
+    socket.on("disconnect", (reason) => {
       isConnected = false;
       clearInterval(heartbeatInterval);
       
@@ -425,115 +344,22 @@ export function initializeSocketHandlers(
       if (roomId && userId && userName) {
         console.log(`🧹 [${timestamp}] Cleaning up user ${userName} from room ${roomId}`);
         
-        // Stop typing indicator if user was typing
-        setUserTyping(socket.id, false);
-        socket.to(roomId).emit("typing-update", { userId, userName, isTyping: false });
-        
         // Remove user from active users
         removeUser(socket.id);
         
         // Update user status in database
-        await User.findByIdAndUpdate(userId, { 
-          activityStatus: UserStatus.OFFLINE,
-          currentRoomId: null
-        });
-
-        // Broadcast status refresh event to all connected users
-        io.emit('user-status-refresh', {
-          userId,
-          userName,
-          activityStatus: UserStatus.OFFLINE,
-          timestamp: new Date().toISOString(),
-          roomId
-        });
-        
-        console.log(`📡 Broadcasted status refresh for disconnected user ${userName}`);
+        User.findByIdAndUpdate(userId, { 
+          activityStatus: "offline" 
+        }).catch(console.error);
 
         // Notify other users with a delay to prevent rapid disconnect/reconnect spam
-        setTimeout(async () => {
+        setTimeout(() => {
           console.log(`📢 [${new Date().toISOString()}] Broadcasting user disconnect: ${userName}`);
           socket.to(roomId).emit("userDisconnected", {
             userId,
             userName,
             timestamp: new Date().toISOString()
           });
-
-          // Send updated participant list with current statuses
-          const roomData = await Room.findOne({ id: roomId });
-          if (roomData) {
-            const participantIds = roomData.participantList.map(p => p.userId);
-            const participantUsers = await User.find({ _id: { $in: participantIds } })
-              .select('name profilePicId activityStatus currentRoomId')
-              .lean();
-
-            const participantsWithStatus = participantUsers
-              .filter(user => user._id && user.name) // Filter out users with missing essential data
-              .map(user => {
-              const userStatus = user.activityStatus || 'offline';
-              
-              // Map backend UserStatus to frontend status types
-              const getGlobalStatus = (status: string): 'online' | 'offline' | 'away' => {
-                switch (status) {
-                  case 'online':
-                  case 'busy':
-                  case 'idle':
-                  case 'in-room':
-                    return 'online';
-                  case 'away':
-                    return 'away';
-                  default:
-                    return 'offline';
-                }
-              };
-
-              const getRoomStatus = (status: string, currentRoomId?: string): 'online' | 'away' | 'in-room' | 'offline' => {
-                if (currentRoomId === roomId) {
-                  // User is in this room
-                  switch (status) {
-                    case 'online':
-                    case 'busy':
-                    case 'idle':
-                    case 'in-room':
-                      return 'in-room';
-                    case 'away':
-                      return 'away';
-                    default:
-                      return 'offline';
-                  }
-                } else {
-                  // User is not in this room
-                  switch (status) {
-                    case 'online':
-                    case 'busy':
-                    case 'idle':
-                      return 'online';
-                    case 'away':
-                      return 'away';
-                    case 'in-room':
-                      return 'in-room'; // They're in a different room
-                    default:
-                      return 'offline';
-                  }
-                }
-              };
-
-              const globalStatus = getGlobalStatus(userStatus);
-              const roomStatus = getRoomStatus(userStatus, user.currentRoomId);
-              
-              return {
-                userId: user._id,
-                userName: user.name,
-                profilePicId: user.profilePicId,
-                globalStatus: globalStatus,
-                roomStatus: roomStatus,
-                currentRoomId: user.currentRoomId,
-                lastSeen: new Date(),
-                isInSameRoom: user.currentRoomId === roomId
-              };
-            });
-
-            io.to(roomId).emit("roomParticipants", participantsWithStatus);
-          }
         }, 1000); // 1 second delay
 
         console.log(`✅ [${timestamp}] User ${userName} cleanup completed for room ${roomId}`);

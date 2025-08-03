@@ -128,43 +128,6 @@
     background-clip: content-box;
   }
 
-  /* Auto-hide scrollbar that only appears when needed and on hover */
-  .auto-hide-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-    transition: scrollbar-color 0.3s ease;
-  }
-
-  .auto-hide-scrollbar:hover {
-    scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
-  }
-
-  .auto-hide-scrollbar::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .auto-hide-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .auto-hide-scrollbar::-webkit-scrollbar-thumb {
-    background: transparent;
-    border-radius: 4px;
-    transition: background 0.3s ease;
-  }
-
-  .auto-hide-scrollbar:hover::-webkit-scrollbar-thumb {
-    background: rgba(156, 163, 175, 0.5);
-  }
-
-  .auto-hide-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(156, 163, 175, 0.7);
-  }
-
-  .auto-hide-scrollbar::-webkit-scrollbar-thumb:active {
-    background: rgba(156, 163, 175, 0.9);
-  }
-
   /* Firefox support */
   .vscode-scrollbar {
     scrollbar-width: thin;

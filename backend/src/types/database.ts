@@ -20,6 +20,8 @@ export interface IRoom extends Document {
     userId: mongoose.Types.ObjectId;
     name: string;
     profilePicId?: mongoose.Types.ObjectId;
+    role: 'owner' | 'admin' | 'member' | 'viewer';
+    joinedAt: Date;
   }[];
   createdAt: Date;
   updatedAt: Date;
@@ -64,13 +66,6 @@ export interface IUser extends Document {
   resetToken?: string;
   resetTokenExpiry?: Date;
   activityStatus: UserStatus;
-  currentRoomId?: string;
-  joinedRooms: {
-    roomId: string;
-    roomName: string;
-    lastJoined: Date;
-    joinCount: number;
-  }[];
   lastLogin?: Date;
   isEmailVerified: boolean;
   emailVerificationToken?: string;
@@ -92,6 +87,7 @@ export interface IUser extends Document {
     filesCreated: number;
     totalTimeSpent: number; // in minutes
   };
+  lastSeen: Date;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -6,7 +6,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { User, authAPI, activityAPI } from '@/lib/api';
-import { SocketService } from '@/lib/socket';
+import socketService from '@/lib/socket';
 
 interface AuthContextType {
   user: User | null;
@@ -18,7 +18,6 @@ interface AuthContextType {
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
-  socketService: SocketService; // Add socket service to context
   isLoading: boolean;
 }
 
@@ -36,16 +35,11 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [activityStatus, setActivityStatusState] = useState<string>('Online');
   const [isLoading, setIsLoading] = useState(true);
-  const [activityStatus, setActivityStatusState] = useState<string>('online');
-  
-  // Create a new socket service instance for this auth session
-  const [socketService] = useState(() => new SocketService());
 
   useEffect(() => {
     const initAuth = async () => {
@@ -173,7 +167,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     logout,
     isAuthenticated: !!token && !!user,
     isLoading,
-    socketService, // Add socket service to context value
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

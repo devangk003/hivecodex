@@ -1,4 +1,4 @@
-export type GlobalUserStatus = 'online' | 'offline' | 'away';
+export type GlobalUserStatus = 'online' | 'offline';
 export type RoomUserStatus = 'online' | 'away' | 'in-room' | 'offline';
 
 export interface UserStatusData {

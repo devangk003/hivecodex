@@ -75,6 +75,7 @@ class CollaborationService {
   setEditor(editorInstance: editor.IStandaloneCodeEditor) {
     this.editor = editorInstance;
     this.setupEditorListeners();
+    this.setupSocketListeners();
   }
 
   setUser(user: { id: string; name: string }) {
@@ -140,6 +141,24 @@ class CollaborationService {
     });
 
     console.log('✅ Editor listeners setup complete');
+  }
+
+  private setupSocketListeners() {
+    console.log('🔗 Setting up socket listeners');
+    
+    // Listen for incoming collaborative changes
+    socketService.onCollaborativeChange((change: CollaborativeChange) => {
+      console.log('📥 Received collaborative change:', change);
+      this.applyRemoteChange(change);
+    });
+
+    // Listen for cursor updates from other users
+    socketService.onCursorUpdate((cursor: UserCursor) => {
+      console.log('📥 Received cursor update:', cursor);
+      this.updateRemoteCursor(cursor);
+    });
+
+    console.log('✅ Socket listeners setup complete');
   }
 
   private handleLocalChange(event: editor.IModelContentChangedEvent) {
@@ -248,6 +267,32 @@ class CollaborationService {
 
       socketService.sendCursorUpdate(cursor);
     }
+  }
+
+  // Direct method for sending collaborative changes from editor
+  sendChange(change: CollaborativeChange) {
+    if (!this.roomId || !this.currentUser) {
+      console.log('❌ Cannot send change - missing room or user');
+      return;
+    }
+
+    console.log('📡 Broadcasting collaborative change:', change);
+    
+    // Update local file version
+    const fileVersion = this.fileVersions.get(change.fileId);
+    if (fileVersion) {
+      // For simplicity, we'll update the version after sending
+      this.fileVersions.set(change.fileId, {
+        ...fileVersion,
+        version: fileVersion.version + 1,
+        lastModified: new Date(),
+      });
+    }
+
+    // Send to server via socket
+    socketService.sendCollaborativeChange(change);
+    
+    console.log('✅ Change broadcasted successfully');
   }
 
   private handleCursorChange(event: editor.ICursorPositionChangedEvent) {

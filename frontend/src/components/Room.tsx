@@ -1,8 +1,9 @@
 import FloatingUserCard from './FloatingUserCard';
-import type { SelectedFile } from '@/types';
-import { API_BASE_URL } from '@/lib/api';
+import type { SelectedFile, FileTab } from '@/types';
+import { API_BASE_URL, roomAPI, fileAPI, type Room as RoomType } from '@/lib/api';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import {
   ArrowLeft,
   MessageSquare,
@@ -14,15 +15,22 @@ import {
   Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ActivityBar } from '@/components/ActivityBar';
-import { PanelContainer } from '@/components/PanelContainer';
+import { ActivityBar } from '@/components/ActivityBar/ActivityBar';
+import { FileExplorer } from '@/components/FileExplorer/FileExplorer';
+import { SearchPanel } from '@/components/SearchPanel/SearchPanel';
+import { SourceControlPanel } from '@/components/SourceControlPanel/SourceControlPanel';
+import { RunPanel } from '@/components/RunPanel/RunPanel';
+import { UsersPanel } from '@/components/UsersPanel/UsersPanel';
+import { SettingsPanel } from '@/components/SettingsPanel/SettingsPanel';
+import { ActivityPanel } from '@/components/ActivityPanel';
+import { MainContextProvider } from '@/contexts/MainContext';
 import { MonacoEditor } from '@/components/MonacoEditor';
-import { UserStatusPanel } from '@/components/UserStatusPanel';
 import Chat from '@/components/Chat';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserStatusContext } from '@/contexts/UserStatusContext';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import socketService from '@/lib/socket';
 import type { RoomParticipant } from '@/types/userStatus';
 
 interface FileTreeItem {
@@ -33,6 +41,7 @@ interface FileTreeItem {
   size?: number;
   content?: string;
   extension?: string;
+  language?: string;
   children?: FileTreeItem[];
   isExpanded?: boolean;
   isSelected?: boolean;
@@ -45,7 +54,7 @@ import { User, Participant as APIParticipant } from '@/lib/api';
 const Room = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
-  const { user, socketService } = useAuth(); // Get socketService from context
+  const { user } = useAuth();
   const { 
     participants, 
     currentRoomId, 
@@ -59,7 +68,7 @@ const Room = () => {
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   const [isRightPanelMinimized, setIsRightPanelMinimized] = useState(false);
-  const [activeView, setActiveView] = useState('files');
+  const [activeView, setActiveView] = useState('explorer');
 
   // Voice state
   const [isVoiceConnected, setIsVoiceConnected] = useState(false);
@@ -69,19 +78,48 @@ const Room = () => {
   // File state
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
 
-  // Room participants (all users who have joined this room, regardless of current location)
+  // Room data state
+  const [roomData, setRoomData] = useState<RoomType | null>(null);
+  const [isLoadingRoom, setIsLoadingRoom] = useState(true);
+
+  // Room participants (converted from Map to Array for easier handling)
   const roomParticipants: RoomParticipant[] = Array.from(participants.values())
+    .filter(p => p.currentRoomId === roomId)
     .map(p => ({
       id: p.userId,
       name: p.userName,
       profilePicId: p.profilePicId,
-      status: p.currentRoomId === roomId ? (p.roomStatus || 'in-room') : 
-              p.currentRoomId && p.currentRoomId !== roomId ? 'in-room' : 
-              p.globalStatus === 'online' ? 'online' : 'offline',
-      isOnline: p.globalStatus === 'online',
+      status: p.roomStatus || 'offline',
+      isOnline: p.globalStatus === 'online' && p.roomStatus !== 'offline',
       lastSeen: p.lastSeen,
       currentRoomId: p.currentRoomId,
     }));
+
+  // Fetch room data
+  useEffect(() => {
+    if (!roomId) return;
+    
+    const fetchRoomData = async () => {
+      try {
+        setIsLoadingRoom(true);
+        console.log('Fetching room data for roomId:', roomId);
+        const response = await roomAPI.getRoom(roomId);
+        console.log('Fetched room response:', response);
+        // Backend returns wrapped response: { success: true, data: room, timestamp: Date }
+        const room = response.data || response; // Handle both wrapped and unwrapped formats
+        console.log('Extracted room data:', room);
+        setRoomData(room);
+      } catch (error) {
+        console.error('Failed to fetch room data:', error);
+        // Fallback to using roomId if fetch fails
+        setRoomData(null);
+      } finally {
+        setIsLoadingRoom(false);
+      }
+    };
+
+    fetchRoomData();
+  }, [roomId]);
 
   // Initialize room and socket connection
   useEffect(() => {
@@ -133,36 +171,20 @@ const Room = () => {
       }
     };
 
-    const handleParticipantList = (participantList: any[]) => {
-      // Filter out participants with missing essential data
-      const validParticipants = participantList.filter(p => 
-        p && p.userId && p.userName && typeof p.userName === 'string'
-      );
-      
-      if (validParticipants.length !== participantList.length) {
-        console.warn('Room.tsx - Filtered out invalid participants:', {
-          original: participantList.length,
-          valid: validParticipants.length,
-          invalid: participantList.filter(p => !p || !p.userId || !p.userName)
-        });
-      }
-      
-      validParticipants.forEach(p => {
-        // Handle the new UserStatusData format from backend
-        const globalStatus = p.globalStatus || 'offline';
-        const roomStatus = p.roomStatus || 'offline';
-        const currentRoomId = p.currentRoomId;
-        const isInSameRoom = p.isInSameRoom || false;
+    const handleParticipantList = (participantList: APIParticipant[]) => {
+      participantList.forEach(p => {
+        const isOnline = p.online || false;
+        const status = isOnline ? 'in-room' : 'offline';
         
         updateParticipantStatus({
-          userId: p.userId || p.id,
-          userName: p.userName || p.name,
+          userId: p.id,
+          userName: p.name,
           profilePicId: p.profilePicId,
-          globalStatus: globalStatus,
-          roomStatus: roomStatus,
-          currentRoomId: currentRoomId,
-          lastSeen: p.lastSeen ? new Date(p.lastSeen) : new Date(),
-          isInSameRoom: isInSameRoom,
+          globalStatus: isOnline ? 'online' : 'offline',
+          roomStatus: status,
+          currentRoomId: isOnline ? roomId : undefined,
+          lastSeen: !isOnline ? new Date() : undefined,
+          isInSameRoom: isOnline,
         });
       });
     };
@@ -204,18 +226,42 @@ const Room = () => {
     // TODO: Implement actual deafen logic
   }, [isDeafened]);
 
-  // File selection handler
-  const handleFileSelect = useCallback((file: FileTreeItem) => {
+  // File selection handler implementing VS Code exact pattern
+  const handleFileSelect = useCallback(async (file: FileTreeItem) => {
     if (!file.fileId) return;
-    setSelectedFile({
-      id: file.id,
-      name: file.name,
-      content: file.content,
-      extension: file.extension,
-      fileId: file.fileId,
-      path: file.path,
-    });
-    // TODO: Load file content and display in code editor
+    
+    console.log("branch", file.name, file.path);
+
+    try {
+      const fileContent = await fileAPI.getFileContent(file.fileId);
+      
+      // Create active file object matching reference implementation
+      const activeFile = {
+        path: file.path,
+        name: file.name,
+        extension: file.extension,
+        language: file.language || file.extension || 'text',
+        isModified: false
+      };
+
+      // Create selected file for editor matching the reference structure
+      const selectedFile: SelectedFile = {
+        id: file.id,
+        name: file.name,
+        path: file.path,
+        content: fileContent.content || '',
+        extension: file.extension,
+        language: file.language || file.extension || 'text',
+        fileId: file.fileId,
+      };
+      
+      setSelectedFile(selectedFile);
+      
+      console.log("File selected for editor:", selectedFile);
+    } catch (error) {
+      console.error('Failed to load file content:', error);
+      toast.error('Failed to open file');
+    }
   }, []);
 
   const onlineCount = roomParticipants.filter(
@@ -242,7 +288,21 @@ const Room = () => {
           Back to Rooms
         </Button>
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <h1 className="text-sm font-medium truncate">Room {roomId}</h1>
+          <h1 className="text-sm font-medium truncate">
+            {isLoadingRoom ? (
+              `Loading Room...`
+            ) : roomData?.name ? (
+              roomData.name
+            ) : (
+              `Room ${roomId}`
+            )}
+          </h1>
+          {/* Debug info - remove in production */}
+          {process.env.NODE_ENV === 'development' && (
+            <span className="text-xs text-yellow-500" title={`Loading: ${isLoadingRoom}, RoomData: ${JSON.stringify(roomData)}`}>
+            
+            </span>
+          )}
           <span className="text-xs text-muted-foreground">•</span>
           <span className="text-xs text-muted-foreground">HiveCodeX</span>
           <span className="text-xs text-muted-foreground">•</span>
@@ -287,44 +347,92 @@ const Room = () => {
       {/* Room Content */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
         <PanelGroup direction="horizontal" className="h-full">
-          {/* Activity Bar - Always visible */}
+          {/* Activity Bar & Left Panel */}
           <div className="flex">
             <ActivityBar
-              activeView={activeView}
-              onViewChange={setActiveView}
-              isPanelOpen={isExplorerOpen}
-              onPanelToggle={() => setIsExplorerOpen(!isExplorerOpen)}
-              isVoiceConnected={isVoiceConnected}
-              onVoiceToggle={handleVoiceToggle}
-              isMuted={isMuted}
-              onMuteToggle={handleMuteToggle}
-              isDeafened={isDeafened}
-              onDeafenToggle={handleDeafenToggle}
+              activePanel={activeView as any}
+              onPanelChange={(panel) => {
+                setActiveView(panel);
+                if (!isExplorerOpen) setIsExplorerOpen(true);
+              }}
               roomId={roomId || ''}
             />
+            
+            {/* Left Panel - Conditionally show based on explorer state */}
+            {isExplorerOpen && (
+              <div className="w-80 bg-discord-sidebar border-r border-discord-border">
+                {activeView === 'explorer' && (
+                  <FileExplorer
+                    roomId={roomId || ''}
+                    onFileSelect={(file) => handleFileSelect(file)}
+                    selectedFileId={selectedFile?.id}
+                  />
+                )}
+                {activeView === 'search' && (
+                  <SearchPanel
+                    roomId={roomId || ''}
+                    onResultSelect={(result) => {
+                      // Handle search result selection
+                      handleFileSelect({
+                        id: result.fileId,
+                        name: result.fileName,
+                        type: 'file',
+                        path: result.filePath,
+                        content: '',
+                        language: 'text'
+                      });
+                    }}
+                  />
+                )}
+                {activeView === 'sourceControl' && (
+                  <SourceControlPanel
+                    roomId={roomId || ''}
+                    onFileSelect={(filePath) => {
+                      // Handle source control file selection
+                      handleFileSelect({
+                        id: filePath,
+                        name: filePath.split('/').pop() || '',
+                        type: 'file',
+                        path: filePath,
+                        content: '',
+                        language: 'text'
+                      });
+                    }}
+                  />
+                )}
+                {activeView === 'run' && (
+                  <RunPanel
+                    roomId={roomId || ''}
+                    currentFile={selectedFile ? {
+                      name: selectedFile.name,
+                      content: selectedFile.content,
+                      language: selectedFile.language
+                    } : undefined}
+                  />
+                )}
+                {activeView === 'users' && (
+                  <UsersPanel
+                    roomId={roomId || ''}
+                    currentUserId={user?.id || ''}
+                    onUserSelect={(user) => {
+                      // Handle user selection
+                      console.log('Selected user:', user);
+                    }}
+                    onInviteUser={() => {
+                      // Handle invite user
+                      console.log('Invite user clicked');
+                    }}
+                  />
+                )}
+                {activeView === 'settings' && (
+                  <SettingsPanel
+                    roomId={roomId || ''}
+                    onClose={() => setIsExplorerOpen(false)}
+                  />
+                )}
+              </div>
+            )}
           </div>
-
-          {/* Left Panel - Conditionally show based on explorer state */}
-          {isExplorerOpen && (
-            <>
-              <Panel
-                id="explorer-panel"
-                order={2}
-                defaultSize={20}
-                minSize={15}
-                maxSize={35}
-                className="bg-discord-sidebar border-r border-discord-border border-animated flex-shrink-0"
-              >
-                <PanelContainer
-                  activeView={activeView}
-                  isOpen={isExplorerOpen}
-                  roomId={roomId || ''}
-                  onFileSelect={handleFileSelect}
-                />
-              </Panel>
-              <PanelResizeHandle className="w-1 bg-discord-border hover:bg-discord-primary transition-colors duration-200" />
-            </>
-          )}
 
           {/* Main Editor */}
           <Panel
@@ -392,7 +500,7 @@ const Room = () => {
                       value="activity"
                       className="flex-1 m-0 p-0 overflow-hidden"
                     >
-                      <UserStatusPanel
+                      <ActivityPanel
                         participants={roomParticipants}
                         roomId={roomId || ''}
                       />

@@ -43,16 +43,6 @@ const userSchema = new Schema<IUser>({
     enum: Object.values(UserStatus),
     default: UserStatus.OFFLINE 
   },
-  currentRoomId: {
-    type: String,
-    default: null
-  },
-  joinedRooms: [{
-    roomId: { type: String, required: true },
-    roomName: { type: String, required: true },
-    lastJoined: { type: Date, default: Date.now },
-    joinCount: { type: Number, default: 1 }
-  }],
   lastLogin: {
     type: Date,
     default: undefined
@@ -119,6 +109,10 @@ const userSchema = new Schema<IUser>({
       type: Number,
       default: 0
     }
+  },
+  lastSeen: {
+    type: Date,
+    default: Date.now
   }
 }, {
   timestamps: true,
@@ -238,6 +232,15 @@ const roomSchema = new Schema<IRoom>({
     profilePicId: { 
       type: Schema.Types.ObjectId,
       default: null
+    },
+    role: {
+      type: String,
+      enum: ['owner', 'admin', 'member', 'viewer'],
+      default: 'member'
+    },
+    joinedAt: {
+      type: Date,
+      default: Date.now
     }
   }]
 }, {

@@ -228,3 +228,13 @@
 .monaco-editor .user-cursor-label {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
+
+/* Tab scrolling utilities */
+.scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* WebKit */
+}

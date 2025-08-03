@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 
 // In-memory storage for active users (consider Redis for production scaling)
 let activeUsers: Map<SocketId, User> = new Map();
-let userSessions: Map<string, UserSession> = new Map(); // socketId -> session
+let userSessions: Map<string, UserSession> = new Map(); // userId -> session
 let typingUsers: Map<string, TypingUser[]> = new Map(); // roomId -> typing users
 
 /**
@@ -14,7 +14,7 @@ let typingUsers: Map<string, TypingUser[]> = new Map(); // roomId -> typing user
 export function addUser(user: User): void {
   activeUsers.set(user.socketId, user);
   
-  // Update session tracking with unique key per socket
+  // Update session tracking
   const session: UserSession = {
     userId: user.userId,
     userName: user.username,
@@ -25,8 +25,7 @@ export function addUser(user: User): void {
     lastActivity: new Date()
   };
   
-  // Use socketId as key to ensure each connection is tracked separately
-  userSessions.set(user.socketId, session);
+  userSessions.set(user.userId.toString(), session);
 }
 
 /**
@@ -36,7 +35,7 @@ export function removeUser(socketId: SocketId): User | undefined {
   const user = activeUsers.get(socketId);
   if (user) {
     activeUsers.delete(socketId);
-    userSessions.delete(socketId); // Use socketId as key
+    userSessions.delete(user.userId.toString());
     
     // Remove from typing users if present
     removeUserFromTyping(user.roomId, user.userId.toString());
@@ -246,7 +245,7 @@ export function updateUserActivity(socketId: SocketId): void {
   if (user) {
     user.lastSeen = new Date();
     
-    const session = userSessions.get(socketId);
+    const session = userSessions.get(user.userId.toString());
     if (session) {
       session.lastActivity = new Date();
     }
