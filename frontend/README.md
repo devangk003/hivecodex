@@ -1,73 +1,84 @@
-# Welcome to your Lovable project
+# HiveCodex - Frontend
 
-## Project info
+This is the frontend for the HiveCodex application, a real-time collaborative coding platform. It's built with React, Vite, and TypeScript, and styled with Tailwind CSS and shadcn/ui.
 
-**URL**: https://lovable.dev/projects/47e43ec7-d6ab-41f9-8d29-c19b74956066
+## ✨ Features
 
-## How can I edit this code?
+* **Modern React Stack**: Built with Vite for a fast development experience.
+* **Type Safety**: Fully written in TypeScript.
+* **Component-Based UI**: A rich set of reusable components from `shadcn/ui`.
+* **Real-time Interactivity**: Seamless communication with the backend via Socket.IO for live updates.
+* **Collaborative Editor**: Integrated Monaco Editor with real-time cursor tracking and text synchronization.
+* **Client-Side State Management**: Efficient data fetching and caching with TanStack Query.
+* **Protected Routes**: Secure routing for authenticated users.
 
-There are several ways of editing your application.
+## 🛠️ Tech Stack
 
-**Use Lovable**
+* **Framework**: React (with Vite)
+* **Language**: TypeScript
+* **UI Library**: shadcn/ui
+* **Styling**: Tailwind CSS
+* **State Management**: TanStack Query, React Context
+* **Routing**: React Router DOM
+* **Editor**: Monaco Editor
+* **Real-time**: Socket.IO Client
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/47e43ec7-d6ab-41f9-8d29-c19b74956066) and start prompting.
+## 🏁 Getting Started
 
-Changes made via Lovable will be committed automatically to this repo.
+### Prerequisites
 
-**Use your preferred IDE**
+* Node.js (v18 or higher)
+* npm
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Installation & Setup
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+1.  **Navigate to the frontend directory:**
 
-Follow these steps:
+    ```bash
+    cd frontend
+    ```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+2.  **Install dependencies:**
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+    ```bash
+    npm install
+    ```
 
-# Step 3: Install the necessary dependencies.
-npm i
+3.  **Create an environment file:**
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+    Copy the contents of `.env.example` to a new file named `.env`.
 
-**Edit a file directly in GitHub**
+    ```
+    VITE_API_BASE_URL=http://localhost:5000/api
+    VITE_SOCKET_URL=http://localhost:5000
+    ```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+4.  **Run the development server:**
 
-**Use GitHub Codespaces**
+    ```bash
+    npm run dev
+    ```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+    The frontend will be available at `http://localhost:8080`.
 
-## What technologies are used for this project?
+## 🚀 Available Scripts
 
-This project is built with:
+* `npm run dev`: Starts the Vite development server.
+* `npm run build`: Builds the application for production.
+* `npm run lint`: Lints the codebase using ESLint.
+* `npm run format`: Formats the code using Prettier.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/47e43ec7-d6ab-41f9-8d29-c19b74956066) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+## 📂 Folder Structure
+frontend/
+└── src/
+├── components/    # Reusable UI components
+│   ├── ui/        # shadcn/ui components
+│   ├── ...
+├── contexts/      # React Context providers
+├── hooks/         # Custom React hooks
+├── lib/           # API clients, utility functions
+├── pages/         # Page components for routing
+├── services/      # Client-side services (socket, etc.)
+├── types/         # TypeScript type definitions
+├── App.tsx        # Main application component
+└── main.tsx       # Application entry point
