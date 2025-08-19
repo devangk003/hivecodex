@@ -156,18 +156,12 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
   useEffect(() => {
     if (!roomId) return;
 
-    const handleNewMessage = (message: Message) => {
-      console.log('Received new message via socket:', message);
-      setMessages(prev => {
-        // Only add if message doesn't already exist (avoid duplicates)
-        const messageExists = prev.some(m => m.id === message.id);
-        if (messageExists) {
-          console.log('Message already exists, ignoring socket update');
-          return prev;
-        }
-        console.log('Adding new message from socket');
-        return [...prev, message];
-      });
+    const refetchMessages = async () => {
+      try {
+        const response = await chatAPI.getRoomMessages(roomId);
+        if (Array.isArray(response)) setMessages(response);
+        else if (response?.messages) setMessages(response.messages);
+      } catch (e) {}
     };
 
     const handleReactionUpdate = (data: { messageId: string; reactions: any[] }) => {
@@ -198,8 +192,12 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
       });
     };
 
-    // Listen to new messages from other users for real-time updates
-    socketService.onNewMessage(handleNewMessage);
+    // Unified sync: always refetch from DB when notified
+    socketService.onNewMessage((msg) => {
+      if ((msg as any).roomId && (msg as any).roomId !== roomId) return;
+      refetchMessages();
+    });
+    socketService.onChatUpdated(() => { refetchMessages(); });
     socketService.onReactionUpdate(handleReactionUpdate);
     socketService.onTypingUpdate(handleTypingUpdate);
 
@@ -233,8 +231,8 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
       const messageText = newMessage.trim();
       setNewMessage('');
       
-      // Send message via HTTP API - let socket handle adding to UI
-      await chatAPI.sendMessage(roomId, messageText);
+  // Send message via HTTP API; rely on socket chat-updated + message event to sync from DB
+  await chatAPI.sendMessage(roomId, messageText);
       
       socketService.stopTyping(roomId);
     } catch (error) {

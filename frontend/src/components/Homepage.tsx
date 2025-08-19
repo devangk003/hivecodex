@@ -240,7 +240,7 @@ const Homepage = () => {
         {/* Minimal Header */}
         <header className="border-b border-border bg-card py-4 px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-xl font-mono font-bold tracking-tight text-primary">
+            <span className="text-xl font-mono font-bold tracking-tight text-primary drop-shadow-[0_2px_4px_rgba(0,0,0,0.55)] ">
               HiveCodeX
             </span>
             <span className="text-xs text-muted-foreground hidden sm:inline">

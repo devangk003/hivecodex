@@ -83,7 +83,22 @@ const UserAvatar: React.FC<{ participant: RoomParticipant; size?: number }> = ({
   participant,
   size = 32,
 }) => {
-  const statusColor = getStatusColor(participant.status);
+  // Defensive guards in case participant is temporarily undefined or missing fields
+  if (!participant) {
+    return (
+      <div
+        className="relative rounded-full overflow-hidden bg-discord-sidebar flex items-center justify-center"
+        style={{ width: size, height: size }}
+      >
+        <div className="w-full h-full bg-discord-primary flex items-center justify-center text-white font-medium">
+          ?
+        </div>
+      </div>
+    );
+  }
+
+  const safeName = participant.name || '?';
+  const statusColor = getStatusColor(participant.status || 'offline');
   const isOnline = participant.status === 'in-room' || participant.status === 'online';
 
   return (
@@ -100,7 +115,7 @@ const UserAvatar: React.FC<{ participant: RoomParticipant; size?: number }> = ({
           />
         ) : (
           <div className="w-full h-full bg-discord-primary flex items-center justify-center text-white font-medium">
-            {participant.name.charAt(0).toUpperCase()}
+            {safeName.charAt(0).toUpperCase()}
           </div>
         )}
       </div>
@@ -162,7 +177,7 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
 
   // Separate participants by status
   const onlineParticipants = participants.filter(
-    p => p.isOnline && p.status === 'online'
+    p => p.isOnline && (p.status === 'online' || p.status === 'in-room')
   );
   const awayParticipants = participants.filter(
     p => p.isOnline && p.status === 'away'

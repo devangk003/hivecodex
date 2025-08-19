@@ -57,6 +57,7 @@ class CollaborationService {
   private cursorElements: Map<string, HTMLElement> = new Map();
   private cursorUpdateTimeout: NodeJS.Timeout | null = null;
   private typingIndicators: Map<string, NodeJS.Timeout> = new Map();
+  private currentFileId: string | null = null;
 
   // User colors for cursors/selections
   private userColors = [
@@ -75,7 +76,6 @@ class CollaborationService {
   setEditor(editorInstance: editor.IStandaloneCodeEditor) {
     this.editor = editorInstance;
     this.setupEditorListeners();
-    this.setupSocketListeners();
   }
 
   setUser(user: { id: string; name: string }) {
@@ -84,6 +84,10 @@ class CollaborationService {
 
   setRoomId(roomId: string) {
     this.roomId = roomId;
+    // Install listeners once a room is set
+    socketService.onCollaborativeChange((change) => this.receiveRemoteChange(change));
+    socketService.onCollaborativeAck(({ fileId, ackVersion }) => this.handleAck(fileId, ackVersion));
+    socketService.onFileSync(({ fileId, content, version }) => this.applyFileSync(fileId, content, version));
   }
 
   initializeFile(fileId: string, content: string, version: number = 0) {
@@ -94,6 +98,13 @@ class CollaborationService {
       content,
       lastModified: new Date(),
     });
+    if (!this.pendingOperations.has(fileId)) {
+      this.pendingOperations.set(fileId, []);
+    }
+  }
+
+  setCurrentFile(fileId: string) {
+    this.currentFileId = fileId;
   }
 
   getFileState(fileId: string): FileVersion | undefined {
@@ -125,7 +136,7 @@ class CollaborationService {
 
       this.changeTimeout = setTimeout(() => {
         this.handleLocalChange(event);
-      }, 50); // Reduced timeout for better real-time responsiveness
+      }, 20);
     });
 
     // Listen for cursor position changes
@@ -141,24 +152,6 @@ class CollaborationService {
     });
 
     console.log('✅ Editor listeners setup complete');
-  }
-
-  private setupSocketListeners() {
-    console.log('🔗 Setting up socket listeners');
-    
-    // Listen for incoming collaborative changes
-    socketService.onCollaborativeChange((change: CollaborativeChange) => {
-      console.log('📥 Received collaborative change:', change);
-      this.applyRemoteChange(change);
-    });
-
-    // Listen for cursor updates from other users
-    socketService.onCursorUpdate((cursor: UserCursor) => {
-      console.log('📥 Received cursor update:', cursor);
-      this.updateRemoteCursor(cursor);
-    });
-
-    console.log('✅ Socket listeners setup complete');
   }
 
   private handleLocalChange(event: editor.IModelContentChangedEvent) {
@@ -190,8 +183,13 @@ class CollaborationService {
 
     const operations = this.convertMonacoChangesToOperations(
       event.changes,
-      model
+      model,
+      fileVersion.content.length
     );
+    // If the net effect is only whitespace/selection changes, skip
+    if (operations.length === 1 && operations[0].type === 'retain') {
+      return;
+    }
     if (operations.length === 0) {
       console.log('❌ No operations generated');
       return;
@@ -209,14 +207,17 @@ class CollaborationService {
 
     console.log('✅ Sending collaborative change:', change);
 
-    // Update local version
-    const newContent = model.getValue();
+    // Optimistically update local version and queue pending op
+    const optimisticContent = this.applyOperationsToContent(fileVersion.content, operations);
     this.fileVersions.set(fileId, {
       ...fileVersion,
       version: fileVersion.version + 1,
-      content: newContent,
+      content: optimisticContent,
       lastModified: new Date(),
     });
+
+    const queue = this.pendingOperations.get(fileId)!;
+    queue.push(change);
 
     // Send to server
     socketService.sendCollaborativeChange(change);
@@ -267,32 +268,6 @@ class CollaborationService {
 
       socketService.sendCursorUpdate(cursor);
     }
-  }
-
-  // Direct method for sending collaborative changes from editor
-  sendChange(change: CollaborativeChange) {
-    if (!this.roomId || !this.currentUser) {
-      console.log('❌ Cannot send change - missing room or user');
-      return;
-    }
-
-    console.log('📡 Broadcasting collaborative change:', change);
-    
-    // Update local file version
-    const fileVersion = this.fileVersions.get(change.fileId);
-    if (fileVersion) {
-      // For simplicity, we'll update the version after sending
-      this.fileVersions.set(change.fileId, {
-        ...fileVersion,
-        version: fileVersion.version + 1,
-        lastModified: new Date(),
-      });
-    }
-
-    // Send to server via socket
-    socketService.sendCollaborativeChange(change);
-    
-    console.log('✅ Change broadcasted successfully');
   }
 
   private handleCursorChange(event: editor.ICursorPositionChangedEvent) {
@@ -398,26 +373,27 @@ class CollaborationService {
     this.isApplyingRemoteChange = true;
 
     try {
-      if (change.baseVersion !== fileVersion.version) {
-        console.log(
-          '❌ Version mismatch. Local:',
-          fileVersion.version,
-          'Remote:',
-          change.baseVersion
-        );
-        socketService.requestFileSync(change.fileId);
-        this.isApplyingRemoteChange = false;
-        return;
+      // Transform incoming op against our pending local ops for this file
+      const queue = this.pendingOperations.get(change.fileId) || [];
+      let transformed = change.operations;
+      for (const local of queue) {
+        transformed = this.transformOperations(transformed, local.operations);
       }
 
-      console.log('✅ Applying operations:', change.operations);
-      this.applyOperationsToEditor(change.operations);
+      console.log('✅ Applying transformed operations:', transformed);
+      const currentContent = fileVersion.content;
+      const newContent = this.applyOperationsToContent(currentContent, transformed);
+      this.isApplyingRemoteChange = true;
+      try {
+        model.setValue(newContent);
+      } finally {
+        this.isApplyingRemoteChange = false;
+      }
 
       // Update file version
-      const newContent = model.getValue();
       this.fileVersions.set(fileId, {
         ...fileVersion,
-        version: fileVersion.version + 1,
+        version: (change as any).appliedVersion || fileVersion.version + 1,
         content: newContent,
         lastModified: new Date(),
       });
@@ -425,6 +401,41 @@ class CollaborationService {
       console.log('✅ Remote change applied successfully');
     } finally {
       this.isApplyingRemoteChange = false;
+    }
+  }
+
+  private receiveRemoteChange(change: any) {
+    this.applyRemoteChange(change as CollaborativeChange);
+  }
+
+  private handleAck(fileId: string, ackVersion: number) {
+    const queue = this.pendingOperations.get(fileId);
+    if (!queue || queue.length === 0) return;
+    // Drop the first pending operation (assumes FIFO)
+    queue.shift();
+    const file = this.fileVersions.get(fileId);
+    if (file) {
+      this.fileVersions.set(fileId, { ...file, version: ackVersion, lastModified: new Date() });
+    }
+  }
+
+  private applyFileSync(fileId: string, content: string, version: number) {
+    this.fileVersions.set(fileId, {
+      fileId,
+      version,
+      content,
+      lastModified: new Date(),
+    });
+    if (this.editor) {
+      const model = this.editor.getModel();
+      if (model) {
+        this.isApplyingRemoteChange = true;
+        try {
+          model.setValue(content);
+        } finally {
+          this.isApplyingRemoteChange = false;
+        }
+      }
     }
   }
 
@@ -481,7 +492,8 @@ class CollaborationService {
 
   private convertMonacoChangesToOperations(
     changes: editor.IModelContentChange[],
-    model: editor.ITextModel
+    model: editor.ITextModel,
+    oldContentLength: number
   ): TextOperation[] {
     const operations: TextOperation[] = [];
     let lastOffset = 0;
@@ -508,8 +520,8 @@ class CollaborationService {
       lastOffset = change.rangeOffset + change.rangeLength;
     }
 
-    const documentLength = model.getValueLength();
-    const finalRetain = documentLength - lastOffset;
+    // Use OLD document length here; Monaco changes are relative to previous content
+    const finalRetain = oldContentLength - lastOffset;
     if (finalRetain > 0) {
       operations.push({ type: 'retain', length: finalRetain });
     }
@@ -517,64 +529,86 @@ class CollaborationService {
     return operations;
   }
 
-  private applyOperationsToEditor(operations: TextOperation[]) {
-    if (!this.editor) return;
-
-    const model = this.editor.getModel();
-    if (!model) return;
-
-    const edits: editor.IIdentifiedSingleEditOperation[] = [];
-    let offset = 0;
-
+  private applyOperationsToContent(content: string, operations: TextOperation[]): string {
+    let index = 0;
+    let result = '';
     for (const op of operations) {
-      const start = model.getPositionAt(offset);
-      if (op.type === 'retain' && op.length) {
-        offset += op.length;
-      } else if (op.type === 'insert' && op.text) {
-        edits.push({
-          range: new monaco.Range(
-            start.lineNumber,
-            start.column,
-            start.lineNumber,
-            start.column
-          ),
-          text: op.text,
-          forceMoveMarkers: true,
-        });
-      } else if (op.type === 'delete' && op.length) {
-        const end = model.getPositionAt(offset + op.length);
-        edits.push({
-          range: new monaco.Range(
-            start.lineNumber,
-            start.column,
-            end.lineNumber,
-            end.column
-          ),
-          text: '',
-          forceMoveMarkers: true,
-        });
-        offset += op.length;
+      if (op.type === 'retain') {
+        const len = op.length || 0;
+        result += content.slice(index, index + len);
+        index += len;
+      } else if (op.type === 'insert') {
+        result += op.text || '';
+      } else if (op.type === 'delete') {
+        index += op.length || 0;
       }
     }
-
-    if (edits.length > 0) {
-      model.pushEditOperations([], edits, () => null);
+    if (index < content.length) {
+      result += content.slice(index);
     }
+    return result;
   }
 
-  private transformOperations(
-    operations: TextOperation[],
-    currentVersion: number,
-    baseVersion: number
-  ): TextOperation[] {
-    // Simple operational transformation - in a production app, you'd want a more sophisticated OT library
-    if (currentVersion === baseVersion) {
-      return operations;
-    }
+  private transformOperations(incoming: TextOperation[], against: TextOperation[]): TextOperation[] {
+    // Transform incoming operation against another operation
+    const a = [...incoming];
+    const b = [...against];
+    const result: TextOperation[] = [];
+    let i = 0, j = 0;
+    let aOffset = 0, bOffset = 0;
 
-    // For now, return operations as-is
-    // In a real implementation, you'd need to transform based on concurrent operations
-    return operations;
+    const pushRetain = (len: number) => {
+      if (len <= 0) return;
+      const prev = result[result.length - 1];
+      if (prev && prev.type === 'retain') prev.length = (prev.length || 0) + len;
+      else result.push({ type: 'retain', length: len });
+    };
+    const pushInsert = (text: string) => {
+      if (!text) return;
+      const prev = result[result.length - 1];
+      if (prev && prev.type === 'insert') prev.text = (prev.text || '') + text;
+      else result.push({ type: 'insert', text });
+    };
+    const pushDelete = (len: number) => {
+      if (len <= 0) return;
+      const prev = result[result.length - 1];
+      if (prev && prev.type === 'delete') prev.length = (prev.length || 0) + len;
+      else result.push({ type: 'delete', length: len });
+    };
+
+    let aOp = a[i];
+    let bOp = b[j];
+    while (aOp || bOp) {
+      if (bOp && bOp.type === 'insert') {
+        pushRetain((bOp.text || '').length - bOffset);
+        j++; bOp = b[j]; bOffset = 0;
+        continue;
+      }
+      if (aOp && aOp.type === 'insert') {
+        pushInsert((aOp.text || '').slice(aOffset));
+        i++; aOp = a[i]; aOffset = 0;
+        continue;
+      }
+      const aLen = aOp ? (aOp.type !== 'insert' ? (aOp.length || 0) - aOffset : 0) : 0;
+      const bLen = bOp ? (bOp.type !== 'insert' ? (bOp.length || 0) - bOffset : 0) : 0;
+      if (!bOp || bOp.type === 'retain') {
+        if (aOp && aOp.type === 'retain') { pushRetain(aLen); i++; aOp = a[i]; aOffset = 0; }
+        else if (aOp && aOp.type === 'delete') { pushDelete(aLen); i++; aOp = a[i]; aOffset = 0; }
+        else { j++; bOp = b[j]; bOffset = 0; }
+      } else if (bOp.type === 'delete') {
+        const consume = Math.min(aLen, bLen);
+        if (aOp && aOp.type === 'retain') {
+          // Skip retain over deleted text
+          aOffset += consume;
+        } else if (aOp && aOp.type === 'delete') {
+          // Deleting same region: shrink our delete
+          aOffset += consume;
+        }
+        if (aOffset === (aOp?.length || 0)) { i++; aOp = a[i]; aOffset = 0; }
+        if (consume === bLen) { j++; bOp = b[j]; bOffset = 0; } else { bOffset += consume; }
+      }
+    }
+    return result;
   }
 
   private renderUserCursors() {
@@ -776,11 +810,7 @@ class CollaborationService {
   }
 
   private getCurrentFileId(): string | null {
-    const model = this.editor?.getModel();
-    if (!model) return null;
-    // This assumes the model's URI is the fileId. This needs to be consistent
-    // with how tabs and files are managed in MonacoEditor.tsx
-    return model.uri.toString();
+    return this.currentFileId;
   }
 
   getUserCursors(): Map<string, UserCursor> {

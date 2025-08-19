@@ -13,6 +13,7 @@ import {
   MicOff,
   Headphones,
   Settings,
+  Brain,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ActivityBar } from '@/components/ActivityBar/ActivityBar';
@@ -23,9 +24,9 @@ import { RunPanel } from '@/components/RunPanel/RunPanel';
 import { UsersPanel } from '@/components/UsersPanel/UsersPanel';
 import { SettingsPanel } from '@/components/SettingsPanel/SettingsPanel';
 import { ActivityPanel } from '@/components/ActivityPanel';
-import { MainContextProvider } from '@/contexts/MainContext';
 import { MonacoEditor } from '@/components/MonacoEditor';
 import Chat from '@/components/Chat';
+import AIAssistant from '@/components/AIAssistant/AIAssistant';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserStatusContext } from '@/contexts/UserStatusContext';
@@ -51,7 +52,18 @@ interface FileTreeItem {
 
 import { User, Participant as APIParticipant } from '@/lib/api';
 
+import { EditorProvider } from '@/contexts/EditorContext';
+
 const Room = () => {
+  // ... existing code
+  return (
+    <EditorProvider>
+      <RoomContent />
+    </EditorProvider>
+  );
+};
+
+const RoomContent = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -77,20 +89,23 @@ const Room = () => {
 
   // File state
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
+  const [openTabs, setOpenTabs] = useState<FileTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [cursorPosition, setCursorPosition] = useState<{ line: number; column: number }>({ line: 0, column: 0 });
 
   // Room data state
   const [roomData, setRoomData] = useState<RoomType | null>(null);
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
 
-  // Room participants (converted from Map to Array for easier handling)
+  // Build room participants from room data list, merging live status from context
   const roomParticipants: RoomParticipant[] = Array.from(participants.values())
-    .filter(p => p.currentRoomId === roomId)
+    .filter(p => !!p && !!p.userId)
     .map(p => ({
       id: p.userId,
-      name: p.userName,
+      name: p.userName || 'Unknown',
       profilePicId: p.profilePicId,
-      status: p.roomStatus || 'offline',
-      isOnline: p.globalStatus === 'online' && p.roomStatus !== 'offline',
+      status: p.currentRoomId === roomId ? 'in-room' : (p.globalStatus === 'online' ? 'away' : 'offline'),
+      isOnline: p.globalStatus === 'online',
       lastSeen: p.lastSeen,
       currentRoomId: p.currentRoomId,
     }));
@@ -226,53 +241,117 @@ const Room = () => {
     // TODO: Implement actual deafen logic
   }, [isDeafened]);
 
-  // File selection handler implementing VS Code exact pattern
+  // File selection handler
   const handleFileSelect = useCallback(async (file: FileTreeItem) => {
     if (!file.fileId) return;
+
+    // Check if file is already open in a tab
+    const existingTab = openTabs.find(tab => tab.fileId === file.fileId);
     
-    console.log("branch", file.name, file.path);
-
-    try {
-      const fileContent = await fileAPI.getFileContent(file.fileId);
-      
-      // Create active file object matching reference implementation
-      const activeFile = {
-        path: file.path,
-        name: file.name,
-        extension: file.extension,
-        language: file.language || file.extension || 'text',
-        isModified: false
-      };
-
-      // Create selected file for editor matching the reference structure
-      const selectedFile: SelectedFile = {
+    if (existingTab) {
+      // File is already open, just switch to that tab
+      setActiveTabId(existingTab.fileId);
+      setSelectedFile({
         id: file.id,
         name: file.name,
-        path: file.path,
-        content: fileContent.content || '',
+        content: existingTab.content,
         extension: file.extension,
         language: file.language || file.extension || 'text',
         fileId: file.fileId,
-      };
-      
-      setSelectedFile(selectedFile);
-      
-      console.log("File selected for editor:", selectedFile);
-    } catch (error) {
-      console.error('Failed to load file content:', error);
-      toast.error('Failed to open file');
-    }
-  }, []);
+        path: file.path,
+      });
+    } else {
+      // File is not open, create a new tab and load content
+      try {
+        const fileContent = await fileAPI.getFileContent(file.fileId);
+        
+        const newTab: FileTab = {
+          fileId: file.fileId,
+          name: file.name,
+          content: fileContent.content || '',
+          language: file.language || file.extension || 'text',
+          isModified: false,
+          isActive: true,
+          path: file.path,
+        };
 
-  const onlineCount = roomParticipants.filter(
-    p => p.status === 'in-room' && p.isOnline
-  ).length;
-  const awayCount = roomParticipants.filter(
-    p => p.status === 'away' && p.isOnline
-  ).length;
-  const offlineCount = roomParticipants.filter(p => !p.isOnline).length;
-  const activeParticipants = roomParticipants.filter(p => p.isOnline);
-  const totalCount = roomParticipants.length; // Include all participants (online and offline)
+        // Add new tab and make it active
+        setOpenTabs(prev => [...prev, newTab]);
+        setActiveTabId(file.fileId);
+        setSelectedFile({
+          id: file.id,
+          name: file.name,
+          content: fileContent.content || '',
+          extension: file.extension,
+          language: file.language || file.extension || 'text',
+          fileId: file.fileId,
+          path: file.path,
+        });
+      } catch (error) {
+        console.error('Failed to load file content:', error);
+        toast.error('Failed to open file');
+      }
+    }
+  }, [openTabs]);
+
+  // Tab management functions
+  const closeTab = useCallback((fileId: string) => {
+    const tabIndex = openTabs.findIndex(tab => tab.fileId === fileId);
+    if (tabIndex === -1) return;
+
+    const newTabs = openTabs.filter(tab => tab.fileId !== fileId);
+    setOpenTabs(newTabs);
+
+    // If closing the active tab, switch to another tab
+    if (activeTabId === fileId) {
+      if (newTabs.length > 0) {
+        // Switch to the previous tab or the first available tab
+        const newActiveTab = newTabs[Math.max(0, tabIndex - 1)];
+        setActiveTabId(newActiveTab.fileId);
+        setSelectedFile({
+          id: newActiveTab.fileId,
+          name: newActiveTab.name,
+          content: newActiveTab.content,
+          extension: newActiveTab.name.split('.').pop(),
+          language: newActiveTab.language,
+          fileId: newActiveTab.fileId,
+          path: newActiveTab.path,
+        });
+      } else {
+        // No tabs left
+        setActiveTabId(null);
+        setSelectedFile(null);
+      }
+    }
+  }, [openTabs, activeTabId]);
+
+  const switchToTab = useCallback((fileId: string) => {
+    const tab = openTabs.find(tab => tab.fileId === fileId);
+    if (!tab) return;
+
+    setActiveTabId(fileId);
+    setSelectedFile({
+      id: tab.fileId,
+      name: tab.name,
+      content: tab.content,
+      extension: tab.name.split('.').pop(),
+      language: tab.language,
+      fileId: tab.fileId,
+      path: tab.path,
+    });
+  }, [openTabs]);
+
+  const { onlineCount, awayCount, offlineCount } = (() => {
+    let online = 0, away = 0, offline = 0;
+    for (const p of roomParticipants) {
+      if (p.isOnline) {
+        if (p.status === 'away') away++; else if (p.status === 'in-room') online++; else online++;
+      } else {
+        offline++;
+      }
+    }
+    return { onlineCount: online, awayCount: away, offlineCount: offline };
+  })();
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
@@ -321,10 +400,7 @@ const Room = () => {
               </span>
             </>
           )}
-          <span className="text-xs text-muted-foreground">•</span>
-          <span className="text-xs text-muted-foreground">
-            Total: {totalCount}
-          </span>
+          {/* Removed Total indicator per request */}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -442,14 +518,17 @@ const Room = () => {
             minSize={30}
             className="bg-discord-primary"
           >
-            <div className="h-full overflow-hidden">
-              <MonacoEditor
-                roomId={roomId || ''}
-                selectedFile={selectedFile}
-                onFileContentChange={(fileId, content) => {
-                  // TODO: Implement real-time collaboration
-                }}
-              />
+            <div className="h-full overflow-hidden flex flex-col">
+              <div className="flex-1">
+                <MonacoEditor
+                  roomId={roomId || ''}
+                  selectedFile={selectedFile}
+                  onFileContentChange={(fileId, content) => {
+                    // MonacoEditor now handles its own tab state management
+                    // Real-time collaboration will be handled internally
+                  }}
+                />
+              </div>
             </div>
           </Panel>
 
@@ -471,7 +550,7 @@ const Room = () => {
                     className="h-full flex flex-col"
                   >
                     <div className="flex items-center justify-between p-2 border-b border-discord-border">
-                      <TabsList className="grid w-full grid-cols-2 bg-transparent h-8">
+                      <TabsList className="grid w-full grid-cols-3 bg-transparent h-8">
                         <TabsTrigger
                           value="activity"
                           className="text-xs data-[state=active]:bg-discord-primary"
@@ -485,6 +564,13 @@ const Room = () => {
                         >
                           <MessageSquare className="h-3 w-3 mr-1" />
                           Chat
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="ai"
+                          className="text-xs data-[state=active]:bg-discord-primary"
+                        >
+                          <Brain className="h-3 w-3 mr-1" />
+                          AI
                         </TabsTrigger>
                       </TabsList>
                       <Button
@@ -510,6 +596,25 @@ const Room = () => {
                       className="flex-1 m-0 p-0 overflow-hidden"
                     >
                       <Chat roomId={roomId || ''} />
+                    </TabsContent>
+                    <TabsContent
+                      value="ai"
+                      className="flex-1 m-0 p-0 overflow-hidden"
+                    >
+                      <AIAssistant
+                        activeFileName={selectedFile?.name}
+                        activeFileContent={selectedFile?.content}
+                        activeFileLanguage={selectedFile?.language}
+                        cursorPosition={cursorPosition}
+                        onInsertCode={(code, fileName, position) => {
+                          // Handle code insertion into the active editor
+                          console.log('Insert code:', code, fileName, position);
+                        }}
+                        onRunCode={(code, language) => {
+                          // Handle code execution
+                          console.log('Run code:', code, language);
+                        }}
+                      />
                     </TabsContent>
                   </Tabs>
                 </div>
@@ -539,6 +644,15 @@ const Room = () => {
                 title="Chat Panel"
               >
                 <MessageSquare className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 hover:bg-discord-sidebar-hover panel-button flex items-center justify-center"
+                onClick={() => setIsRightPanelMinimized(false)}
+                title="AI Assistant"
+              >
+                <Brain className="h-4 w-4" />
               </Button>
             </div>
           </div>

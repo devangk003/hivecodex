@@ -1,8 +1,0 @@
-{
-  "dependencies": {
-    "file-saver": "^2.0.5",
-    "jszip": "^3.10.1",
-    "react-directory-tree": "^1.0.2",
-    "react-dropzone": "^14.3.8"
-  }
-}

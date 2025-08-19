@@ -47,6 +47,10 @@ const userSchema = new Schema<IUser>({
     type: Date,
     default: undefined
   },
+  lastSeen: {
+    type: Date,
+    default: undefined
+  },
   isEmailVerified: {
     type: Boolean,
     default: false
@@ -109,10 +113,6 @@ const userSchema = new Schema<IUser>({
       type: Number,
       default: 0
     }
-  },
-  lastSeen: {
-    type: Date,
-    default: Date.now
   }
 }, {
   timestamps: true,
@@ -122,6 +122,7 @@ const userSchema = new Schema<IUser>({
 // Add indexes for performance
 userSchema.index({ resetToken: 1 });
 userSchema.index({ emailVerificationToken: 1 });
+userSchema.index({ email: 1 }, { unique: true, name: "idx_users_email_unique" });
 
 // Room Schema
 const roomSchema = new Schema<IRoom>({
@@ -235,8 +236,8 @@ const roomSchema = new Schema<IRoom>({
     },
     role: {
       type: String,
-      enum: ['owner', 'admin', 'member', 'viewer'],
-      default: 'member'
+      enum: ["owner", "admin", "member"],
+      default: "member"
     },
     joinedAt: {
       type: Date,
@@ -252,6 +253,7 @@ const roomSchema = new Schema<IRoom>({
 roomSchema.index({ userId: 1 });
 roomSchema.index({ isPrivate: 1 });
 roomSchema.index({ lastActive: -1 });
+roomSchema.index({ name: 1 }, { name: "idx_rooms_name" });
 
 // Message Schema
 const messageSchema = new Schema<IMessage>({
@@ -362,3 +364,33 @@ export const Message = mongoose.model<IMessage>("Message", messageSchema);
 
 // Export schemas for potential extensions
 export { userSchema, roomSchema, messageSchema };
+
+// File metadata and version history
+interface IFileHistoryEntry {
+  timestamp: Date;
+  userId: Schema.Types.ObjectId;
+  previousFileId: Schema.Types.ObjectId; // GridFS file id snapshot
+}
+
+export interface IFileMeta extends Document {
+  currentFileId: Schema.Types.ObjectId; // current GridFS file id
+  history: IFileHistoryEntry[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const fileHistorySchema = new Schema<IFileHistoryEntry>({
+  timestamp: { type: Date, default: Date.now },
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  previousFileId: { type: Schema.Types.ObjectId, required: true },
+});
+
+const fileMetaSchema = new Schema<IFileMeta>({
+  currentFileId: { type: Schema.Types.ObjectId, required: true, index: true, unique: true },
+  history: { type: [fileHistorySchema], default: [] },
+}, {
+  timestamps: true,
+  collection: "fileMeta"
+});
+
+export const FileMeta = mongoose.model<IFileMeta>("FileMeta", fileMetaSchema);

@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
+import monacoEditorPlugin from 'vite-plugin-monaco-editor';
+
+// The plugin might be a default export, or it might be under a 'default' property.
+const MonacoEditorPlugin = (monacoEditorPlugin as any).default || monacoEditorPlugin;
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -15,7 +19,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  plugins: [react()],
+  plugins: [react(), MonacoEditorPlugin({})],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

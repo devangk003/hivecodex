@@ -23,13 +23,21 @@ export interface FileOperationPayload {
   userId: string;
 }
 
+export interface TextOperationPayload {
+  type: 'retain' | 'insert' | 'delete';
+  length?: number;
+  text?: string;
+}
+
 export interface CollaborativeChangePayload {
-  operation: string;
-  content: string;
-  position: number;
-  length: number;
-  fileName: string;
+  id: string;
   userId: string;
+  userName?: string;
+  fileId: string;
+  operations: TextOperationPayload[];
+  baseVersion: number;
+  timestamp?: number;
+  roomId?: string;
 }
 
 export interface CursorUpdatePayload {
@@ -71,6 +79,11 @@ export interface ErrorPayload {
   details?: any;
 }
 
+export interface ChatUpdatedPayload {
+  roomId: string;
+  timestamp: string;
+}
+
 export interface SocketData {
   roomId?: string;
   userId?: string;
@@ -85,7 +98,8 @@ export interface ServerToClientEvents {
   "userDisconnected": (data: UserJoinedPayload) => void;
   "roomParticipants": (users: any[]) => void;
   "message": (data: MessagePayload) => void;
-  "collaborative-change": (data: CollaborativeChangePayload) => void;
+  "collaborative-change": (data: CollaborativeChangePayload & { appliedVersion?: number }) => void;
+  "collaborative-change-ack": (data: { fileId: string; ackVersion: number }) => void;
   "cursor-update": (data: CursorUpdatePayload) => void;
   "typing-start": (data: TypingPayload) => void;
   "typing-stop": (data: TypingPayload) => void;
@@ -95,6 +109,7 @@ export interface ServerToClientEvents {
   "fileDelete": (data: FileOperationPayload) => void;
   "file-sync": (data: any) => void;
   "request-file-sync": (data: any) => void;
+  "chat-updated": (data: ChatUpdatedPayload) => void;
   "statusChange": (data: StatusChangePayload) => void;
   "drawing-update": (data: DrawingPayload) => void;
   "request-drawing": (data: any) => void;
@@ -113,6 +128,7 @@ export interface ServerToClientEvents {
 // Client-to-server events (what client sends to server)
 export interface ClientToServerEvents {
   "joinRoom": (data: JoinRoomPayload) => void;
+  "leave-room": (roomId: string) => void;
   "message": (data: MessagePayload) => void;
   "collaborative-change": (data: CollaborativeChangePayload) => void;
   "cursor-update": (data: CursorUpdatePayload) => void;
@@ -123,6 +139,7 @@ export interface ClientToServerEvents {
   "fileDelete": (data: FileOperationPayload) => void;
   "file-sync": (data: any) => void;
   "request-file-sync": (data: any) => void;
+  "reaction-update": (data: { messageId: string; emoji: string }) => void;
   "statusChange": (data: StatusChangePayload) => void;
   "drawing-update": (data: DrawingPayload) => void;
   "request-drawing": (data: any) => void;

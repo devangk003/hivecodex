@@ -199,6 +199,12 @@ class SocketService {
     }
   }
 
+  onChatUpdated(callback: (data: { roomId: string; timestamp: string }) => void) {
+    if (this.socket) {
+      this.socket.on('chat-updated', callback);
+    }
+  }
+
   // Room participants
   onRoomParticipants(callback: (participants: Participant[]) => void) {
     if (this.socket) {
@@ -382,6 +388,12 @@ class SocketService {
     }
   }
 
+  onCollaborativeAck(callback: (data: { fileId: string; ackVersion: number }) => void) {
+    if (this.socket) {
+      this.socket.on('collaborative-change-ack', callback);
+    }
+  }
+
   sendCursorUpdate(cursor: UserCursor) {
     if (this.socket && this.roomId) {
       this.socket.emit('cursor-update', { ...cursor, roomId: this.roomId });
@@ -400,7 +412,7 @@ class SocketService {
 
   requestFileSync(fileId: string) {
     if (this.socket && this.roomId) {
-      this.socket.emit('request-file-sync', { roomId: this.roomId, fileId });
+      this.socket.emit('request-file-sync', { fileId });
     }
   }
 

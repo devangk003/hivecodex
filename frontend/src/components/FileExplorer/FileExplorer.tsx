@@ -251,22 +251,26 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
       setIsLoading(true);
       const files = await fileAPI.getRoomFiles(roomId);
       
-      // Transform the flat file list into a tree structure
+      // Transform the flat file list into a tree structure (normalize ObjectId/string)
       const buildTree = (items: any[], parentId: string | null = null): FileTreeItem[] => {
+        const parentIdStr = parentId === null ? null : String(parentId);
         return items
-          .filter(item => item.parentId === parentId)
+          .filter(item => {
+            const itemParentStr = item.parentId == null ? null : String(item.parentId);
+            return itemParentStr === parentIdStr;
+          })
           .map(item => ({
-            id: item.fileId || item.id,
+            id: (item.fileId ? String(item.fileId) : (item.id ? String(item.id) : String(item._id))) as string,
             name: item.name,
-            type: item.type === 'directory' ? 'folder' : 'file',
+            type: item.type === 'folder' ? 'folder' : 'file',
             path: item.path || item.name,
             size: item.size,
             extension: item.extension,
             lastModified: item.lastModified ? new Date(item.lastModified) : undefined,
-            fileId: item.fileId,
-            parentId: item.parentId,
+            fileId: item.fileId ? String(item.fileId) : undefined,
+            parentId: item.parentId == null ? null : String(item.parentId),
             isExpanded: false,
-            children: item.type === 'directory' ? buildTree(items, item.fileId || item.id) : undefined,
+            children: item.type === 'folder' ? buildTree(items, (item.fileId ? String(item.fileId) : (item.id ? String(item.id) : String(item._id)))) : undefined,
           }));
       };
 
@@ -331,32 +335,24 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     if (!isCreating || !newItemName.trim()) return;
 
     try {
-      // TODO: Implement actual file/folder creation API call
-      // For now, we'll add it locally
-      const newItem: FileTreeItem = {
-        id: Date.now().toString(),
-        name: newItemName.trim(),
-        type: isCreating.type,
-        path: newItemName.trim(),
-        fileId: Date.now().toString(),
-        parentId: isCreating.parentId === 'root' ? null : isCreating.parentId,
-        isExpanded: false,
-        children: isCreating.type === 'folder' ? [] : undefined,
-      };
-
-      if (isCreating.parentId === 'root') {
-        setFileTree(prev => [...prev, newItem]);
-      } else {
-        setFileTree(prev => 
-          updateFileTree(prev, isCreating.parentId, (current) => ({
-            ...current,
-            children: [...(current.children || []), newItem],
-            isExpanded: true,
-          }))
+      // Call backend creation API
+      if (isCreating.type === 'file') {
+        const created = await fileAPI.createFile(
+          roomId,
+          newItemName.trim(),
+          isCreating.parentId === 'root' ? null : isCreating.parentId
         );
+        await loadFiles();
+        toast.success('File created successfully');
+      } else {
+        const created = await fileAPI.createFolder(
+          roomId,
+          newItemName.trim(),
+          isCreating.parentId === 'root' ? null : isCreating.parentId
+        );
+        await loadFiles();
+        toast.success('Folder created successfully');
       }
-
-      toast.success(`${isCreating.type === 'file' ? 'File' : 'Folder'} created successfully`);
     } catch (error) {
       console.error('Failed to create item:', error);
       toast.error(`Failed to create ${isCreating.type}`);
@@ -397,8 +393,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
 
   const handleRenameItem = async (item: FileTreeItem, newName: string) => {
     try {
-      // TODO: Implement actual rename API call
-      
+      // Not implemented on backend yet - optimistic local update
       setFileTree(prev => 
         updateFileTree(prev, item.id, (current) => ({
           ...current,
@@ -406,16 +401,63 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
           path: newName,
         }))
       );
-
-      toast.success(`${item.type === 'file' ? 'File' : 'Folder'} renamed successfully`);
+      toast.success(`${item.type === 'file' ? 'File' : 'Folder'} renamed`);
     } catch (error) {
       console.error('Failed to rename item:', error);
       toast.error(`Failed to rename ${item.type}`);
     }
   };
 
+  // Move handler (drag-to-move)
+  const handleMove = async (movedId: string, newParentId: string | null) => {
+    try {
+      await fileAPI.moveFileOrFolder(roomId, movedId, newParentId);
+      await loadFiles();
+    } catch (error) {
+      console.error('Failed to move item:', error);
+      toast.error('Failed to move item');
+    }
+  };
+
+  // Drag-and-drop upload and move
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const onDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    try {
+      const items = e.dataTransfer.items;
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const entry = (items[i] as any).webkitGetAsEntry?.();
+        if (entry && entry.isDirectory) {
+          // For directories, prefer folder upload API via input with webkitdirectory. Here, flatten as files
+          // Fallback: collect files from DataTransfer
+        }
+        const file = items[i].getAsFile?.();
+        if (file) files.push(file);
+      }
+      if (files.length === 0 && e.dataTransfer.files?.length) {
+        for (let i = 0; i < e.dataTransfer.files.length; i++) {
+          files.push(e.dataTransfer.files[i]);
+        }
+      }
+      if (files.length > 0) {
+        for (const f of files) {
+          await fileAPI.uploadFile(roomId, f);
+        }
+        await loadFiles();
+        toast.success('Upload completed');
+      }
+    } catch (err) {
+      console.error('Drop upload failed:', err);
+      toast.error('Upload failed');
+    }
+  };
+
   return (
-    <div className="h-full bg-discord-sidebar flex flex-col">
+    <div className="h-full bg-discord-sidebar flex flex-col" onDragOver={onDragOver} onDrop={onDrop}>
       {/* Header */}
       <div className="flex items-center justify-between p-2 border-b border-discord-border">
         <span className="text-xs font-medium text-discord-text uppercase tracking-wide">

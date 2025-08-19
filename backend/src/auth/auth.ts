@@ -3,23 +3,10 @@ import bcrypt from "bcryptjs";
 import { Request, Response, NextFunction } from "express";
 import { JwtPayload, AuthenticatedUser } from "../types/user";
 import { ApiResponse } from "../types";
-import { User } from "../database/models";
 
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "24h";
 const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
-
-/**
- * Update user's lastSeen timestamp
- */
-async function updateLastSeen(userId: string): Promise<void> {
-  try {
-    await User.findByIdAndUpdate(userId, { lastSeen: new Date() });
-  } catch (error) {
-    // Silently fail to avoid disrupting the main request
-    console.error("Failed to update lastSeen for user:", userId, error);
-  }
-}
 
 // Extend Express Request interface to include user
 declare global {
@@ -108,12 +95,6 @@ export function authenticateToken(
   try {
     const decoded = verifyToken(token);
     req.user = decoded;
-    
-    // Update lastSeen timestamp asynchronously (don't block the request)
-    updateLastSeen(decoded.userId.toString()).catch((error: any) => {
-      console.error("Failed to update lastSeen:", error);
-    });
-    
     next();
   } catch (error) {
     res.status(403).json({

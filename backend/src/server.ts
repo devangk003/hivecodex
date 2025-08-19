@@ -33,7 +33,9 @@ import {
 } from "./utils/userHelpers";
 import { initializeSocketHandlers } from "./socket/socketServer";
 import { setGridFSBucket, authRoutes } from "./routes/auth";
-import { User, Room, Message } from "./database/models";
+import aiRoutes from "./routes/ai";
+import roomRoutes from "./routes/roomRoutes";
+import { User, Room, Message, FileMeta } from "./database/models";
 import { JWT_SECRET, MONGO_URI, PORT } from "./config/constants";
 
 // Load environment variables
@@ -81,27 +83,25 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware - CORS configuration for local development and WiFi access
+// Middleware stack
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:8080";
 app.use(cors({
-  origin: "*", // Allow all origins for WiFi access
+  origin: [FRONTEND_URL],
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
   credentials: true,
 }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Add error handling middleware
+// Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   const timestamp = new Date().toISOString();
-  console.error(`\n💥 [${timestamp}] ERROR in ${req.method} ${req.url}`);
-  console.error(`❌ Error Details:`, err);
-  console.error(`📍 Stack Trace:`, err.stack);
-  
-  res.status(err.status || 500).json({
+  const status = err.status || 500;
+  res.status(status).json({
     error: true,
     message: err.message || 'Internal Server Error',
     timestamp,
-    endpoint: `${req.method} ${req.url}`
+    endpoint: `${req.method} ${req.url}`,
   });
 });
 
@@ -156,6 +156,8 @@ const upload = multer();
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/ai", aiRoutes);
+app.use("/api/rooms", roomRoutes);
 
 // Authentication middleware
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
@@ -383,7 +385,14 @@ app.get("/api/user", authenticateToken, async (req, res): Promise<any> => {
 app.get("/api/user/rooms", authenticateToken, async (req, res) => {
   try {
     await dbConnectionPromise;
-    const rooms = await Room.find({ userId: (req as any).user.id })
+    const userIdStr = (req as any).user.id;
+    const userObjectId = new mongoose.Types.ObjectId(userIdStr);
+    const rooms = await Room.find({
+      $or: [
+        { userId: userObjectId },
+        { 'participantList.userId': userObjectId },
+      ],
+    })
       .sort({ lastActive: -1 })
       .lean();
 
@@ -1424,6 +1433,27 @@ app.put("/api/files/:fileId/content", authenticateToken, async (req, res): Promi
     const originalFile = files[0];
     console.log(`🔍 [${timestamp}] Updating file: ${originalFile.filename}`);
 
+    // Record version history before replacing the file
+    try {
+      const userId = (req as any).user?.id;
+      await FileMeta.updateOne(
+        { currentFileId: new ObjectId(fileId) },
+        {
+          $setOnInsert: { currentFileId: new ObjectId(fileId) },
+          $push: {
+            history: {
+              timestamp: new Date(),
+              userId: new ObjectId(userId),
+              previousFileId: new ObjectId(fileId),
+            },
+          },
+        },
+        { upsert: true }
+      );
+    } catch (historyErr) {
+      console.warn(`⚠️ [${timestamp}] Failed to write file version history:`, historyErr);
+    }
+
     // Delete the old file
     await gridfsBucket.delete(new ObjectId(fileId));
     console.log(`🗑️ [${timestamp}] Old file deleted`);
@@ -1448,6 +1478,16 @@ app.put("/api/files/:fileId/content", authenticateToken, async (req, res): Promi
         console.log(`✅ [${timestamp}] Room file references updated`);
       } catch (updateError) {
         console.warn(`⚠️ [${timestamp}] Could not update room file references:`, updateError);
+      }
+
+      // Update FileMeta current pointer to the new GridFS file id
+      try {
+        await FileMeta.updateOne(
+          { currentFileId: new ObjectId(fileId) },
+          { $set: { currentFileId: newFileId } }
+        );
+      } catch (metaErr) {
+        console.warn(`⚠️ [${timestamp}] Failed to update FileMeta currentFileId:`, metaErr);
       }
 
       res.json({
@@ -1595,12 +1635,15 @@ app.post("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Pro
       text: newMessage.content,
       timestamp: newMessage.timestamp.toISOString(),
       profilePicId: user?.profilePicId?.toString() || null,
-      reactions: []
-    };
+      reactions: [],
+      roomId
+    } as any;
 
     // Broadcast to other users in the room for real-time updates
     console.log(`📡 [${timestamp}] Broadcasting message to room: ${roomId}`);
     (io as any).to(roomId).emit("message", formattedMessage);
+  // Also broadcast a chat-updated event so all clients (including sender) refetch from DB
+  ;(io as any).to(roomId).emit("chat-updated", { roomId, timestamp: new Date().toISOString() });
 
     console.log(`✅ [${timestamp}] Message posted successfully`);
     res.status(201).json(formattedMessage);
@@ -1774,6 +1817,153 @@ app.get("/api/rooms/:roomId/files", authenticateToken, async (req, res): Promise
   } catch (error) {
     console.error("Get room files error:", error);
     res.status(500).json({ message: "Failed to get room files" });
+  }
+});
+
+// Create empty file in room
+app.post("/api/rooms/:roomId/create-file", authenticateToken, async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { roomId } = req.params;
+    const { name, parentId } = req.body as { name: string; parentId?: string | null };
+
+    const room = await Room.findOne({ id: roomId });
+    if (!room) return res.status(404).json({ message: "Room not found" });
+
+    if (!gridfsBucket) return res.status(500).json({ message: "File storage not available" });
+
+    // Create empty GridFS file
+    const uploadStream = gridfsBucket.openUploadStream(name, {
+      metadata: { roomId, createdAt: new Date(), empty: true }
+    });
+    uploadStream.end(Buffer.from(""));
+
+    uploadStream.on('finish', async () => {
+      const fileId = uploadStream.id;
+      const fileEntry: any = {
+        fileId,
+        name,
+        ext: path.extname(name),
+        read: false,
+        type: "file",
+        size: 0,
+        lastModified: new Date(),
+        createdAt: new Date(),
+        parentId: parentId ? new mongoose.Types.ObjectId(parentId) : null,
+        path: `/${name}`,
+      };
+      room.files = room.files || [];
+      room.files.push(fileEntry);
+      await room.save();
+      return res.status(201).json({ success: true, file: fileEntry });
+    });
+
+    uploadStream.on('error', (err) => {
+      return res.status(500).json({ message: 'Failed to create file', error: String(err) });
+    });
+  } catch (error) {
+    console.error('Create file error:', error);
+    return res.status(500).json({ message: 'Failed to create file' });
+  }
+});
+
+// Create folder in room
+app.post("/api/rooms/:roomId/create-folder", authenticateToken, async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { roomId } = req.params;
+    const { name, parentId } = req.body as { name: string; parentId?: string | null };
+
+    const room = await Room.findOne({ id: roomId });
+    if (!room) return res.status(404).json({ message: "Room not found" });
+
+    const folderEntry: any = {
+      name,
+      type: "folder",
+      parentId: parentId ? new mongoose.Types.ObjectId(parentId) : null,
+      lastModified: new Date(),
+      createdAt: new Date(),
+      size: 0,
+    };
+    room.files = room.files || [];
+    room.files.push(folderEntry);
+    await room.save();
+    // Return the newly added folder (last element) so client gets the generated _id
+    const created = room.files[room.files.length - 1];
+    return res.status(201).json({ success: true, folder: created });
+  } catch (error) {
+    console.error('Create folder error:', error);
+    return res.status(500).json({ message: 'Failed to create folder' });
+  }
+});
+
+// Move file or folder (change parent)
+app.patch("/api/rooms/:roomId/move", authenticateToken, async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { roomId } = req.params;
+    const { fileId, newParentId } = req.body as { fileId: string; newParentId?: string | null };
+
+    const room = await Room.findOne({ id: roomId });
+    if (!room) return res.status(404).json({ message: "Room not found" });
+
+    const parentObjectId = newParentId ? new mongoose.Types.ObjectId(newParentId) : null;
+
+    // Find target by either subdoc _id (folders) or fileId (files)
+    let updated = false;
+    room.files = (room.files || []).map((entry: any) => {
+      const isFolderMatch = entry._id && entry._id.toString() === fileId;
+      const isFileMatch = entry.fileId && entry.fileId.toString() === fileId;
+      if (isFolderMatch || isFileMatch) {
+        updated = true;
+        return { ...entry, parentId: parentObjectId };
+      }
+      return entry;
+    });
+
+    if (!updated) return res.status(404).json({ message: 'File or folder not found' });
+    await room.save();
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Move file/folder error:', error);
+    return res.status(500).json({ message: 'Failed to move file or folder' });
+  }
+});
+
+// Bulk operations (delete)
+app.patch("/api/rooms/:roomId/files", authenticateToken, async (req, res): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { roomId } = req.params;
+    const { operation, fileIds } = req.body as { operation: string; fileIds: string[] };
+
+    if (operation !== 'delete') return res.status(400).json({ message: 'Unsupported operation' });
+
+    const room = await Room.findOne({ id: roomId });
+    if (!room) return res.status(404).json({ message: 'Room not found' });
+
+    const idsToDelete = new Set(fileIds);
+    // Remove entries matching either subdoc _id or fileId
+    const remaining = (room.files || []).filter((entry: any) => {
+      const match = idsToDelete.has(entry._id?.toString?.()) || idsToDelete.has(entry.fileId?.toString?.());
+      return !match;
+    });
+
+    // Delete GridFS files for matched fileIds
+    for (const entry of room.files || []) {
+      const fileIdValue = entry.fileId ? entry.fileId.toString() : undefined;
+      const match = fileIdValue ? idsToDelete.has(fileIdValue) : false;
+      if (match && entry.fileId && gridfsBucket) {
+        try { await gridfsBucket.delete(new ObjectId(fileIdValue)); } catch {}
+      }
+    }
+
+    room.files = remaining as any;
+    await room.save();
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Bulk operation error:', error);
+    return res.status(500).json({ message: 'Failed to process bulk operation' });
   }
 });
 

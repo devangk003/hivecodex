@@ -21,6 +21,9 @@ export type {
   GridFSConfig
 } from "./database";
 
+// AI types
+export * from "./ai";
+
 // Common utility types
 export interface ApiResponse<T = any> {
   success: boolean;

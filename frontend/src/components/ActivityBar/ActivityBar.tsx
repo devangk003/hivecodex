@@ -14,7 +14,6 @@ export type ActivityBarPanel =
   | 'search' 
   | 'sourceControl' 
   | 'run' 
-  | 'users'
   | 'settings';
 
 interface ActivityBarProps {
@@ -52,12 +51,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
       icon: Play,
       label: 'Run and Debug',
       shortcut: 'Ctrl+Shift+D',
-    },
-    {
-      id: 'users' as ActivityBarPanel,
-      icon: User,
-      label: 'Users',
-      shortcut: 'Ctrl+Shift+U',
     },
   ];
 
