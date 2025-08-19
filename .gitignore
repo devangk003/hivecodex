@@ -1,3 +1,5 @@
+# Ignore the reference project folder
+reference project/
 # Dependencies
 node_modules/
 */node_modules/
