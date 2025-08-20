@@ -5,11 +5,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-COPY server.js ./
-COPY Uploads ./Uploads
+COPY . .
+
+RUN npm run build
 
 ENV NODE_ENV=production
 
 EXPOSE 5000
 
-CMD ["node", "server.js"]
+CMD ["node", "dist/server.js"]

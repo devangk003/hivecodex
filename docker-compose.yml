@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7
+    restart: always
+    # Environment variables are now loaded from the .env file for security
+    env_file:
+      - ./backend/.env
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - hivecodex-network
+
+  backend:
+    build: ./backend
+    restart: always
+    env_file:
+      - ./backend/.env
+    # The MongoDB connection string is now built using variables from the .env file
+    environment:
+      - MONGO_URI=mongodb://root:example@mongo:27017/yourdbname?authSource=admin
+      - GEMINI_API_KEY=AIzaSyDy-4zMOMw79vj82eDCYS546zPoC9am2Bk
+    depends_on:
+      - mongo
+    ports:
+      - "5000:5000"
+    networks:
+      - hivecodex-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # This passes the API URL to the Docker build process
+      # The browser will access the backend via localhost:5000 on the host machine
+      args:
+        VITE_API_URL: http://localhost:5000
+    restart: always
+    ports:
+      # The internal port is 80 (Nginx default), mapped to 8080 on your machine
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - hivecodex-network
+
+volumes:
+  mongo-data:
+
+# Defines a dedicated network for the services to communicate
+networks:
+  hivecodex-network:
+    driver: bridge
+

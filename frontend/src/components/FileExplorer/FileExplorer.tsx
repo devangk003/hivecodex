@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/context-menu';
 import { fileAPI } from '@/lib/api';
 import { toast } from 'sonner';
+import { useFileEditing } from '@/contexts/FileEditingContext';
 
 export interface FileTreeItem {
   id: string;
@@ -110,6 +111,7 @@ const FileNode: React.FC<FileNodeProps> = ({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(item.name);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { isFileBeingEdited, getEditingUsers } = useFileEditing();
 
   const Icon = getFileIcon(item.name, item.type, item.isExpanded);
   const isSelected = selectedFileId === item.id;
@@ -170,6 +172,11 @@ const FileNode: React.FC<FileNodeProps> = ({
             )}
             
             <Icon className="w-4 h-4 mr-2 text-discord-text flex-shrink-0" />
+            
+            {/* Neon green dot for files being edited */}
+            {item.type === 'file' && isFileBeingEdited(item.fileId || item.id) && (
+              <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse shadow-lg shadow-green-400/50" />
+            )}
             
             {isRenaming ? (
               <Input

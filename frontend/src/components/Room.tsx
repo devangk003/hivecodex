@@ -53,12 +53,16 @@ interface FileTreeItem {
 import { User, Participant as APIParticipant } from '@/lib/api';
 
 import { EditorProvider } from '@/contexts/EditorContext';
+import { FileEditingProvider } from '@/contexts/FileEditingContext';
 
 const Room = () => {
-  // ... existing code
+  const { roomId } = useParams<{ roomId: string }>();
+  
   return (
     <EditorProvider>
-      <RoomContent />
+      <FileEditingProvider roomId={roomId || ''}>
+        <RoomContent />
+      </FileEditingProvider>
     </EditorProvider>
   );
 };
@@ -350,6 +354,12 @@ const RoomContent = () => {
         offline++;
       }
     }
+    
+    // Include current user in online count if they're in the room
+    if (currentRoomId === roomId) {
+      online++;
+    }
+    
     return { onlineCount: online, awayCount: away, offlineCount: offline };
   })();
 

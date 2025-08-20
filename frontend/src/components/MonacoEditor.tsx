@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import type { SelectedFile } from '@/types';
 import './MonacoEditor.css';
 import { useAuth } from '@/contexts/AuthContext';
+import { useFileEditing } from '@/contexts/FileEditingContext';
 
 interface MonacoEditorProps {
   roomId: string;
@@ -28,6 +29,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
   const editorContext = useEditor();
   const { user } = useAuth();
   const lastProcessedSelectedFileId = useRef<string | null>(null);
+  const { startEditing, stopEditing, updateCursorPosition, saveFile } = useFileEditing();
 
   // Determine which state to use
   const { state: { tabs, activeTabIndex }, addTab, closeTab, setActiveTab, updateTabContent } = editorContext;
@@ -54,11 +56,42 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
     // Update tab content
     updateTabContent(activeTabIndex, value);
 
+    // Start editing tracking when user starts typing
+    if (user && activeTab.fileId) {
+      startEditing(activeTab.fileId, user.id, user.name || user.email);
+    }
+
     // Notify parent component
     if (onFileContentChange) {
       onFileContentChange(activeTab.fileId, value);
     }
-  }, [activeTab, activeTabIndex, onFileContentChange, updateTabContent]);
+  }, [activeTab, activeTabIndex, onFileContentChange, updateTabContent, startEditing, user]);
+
+  // Handle cursor position changes
+  const handleCursorPositionChange = useCallback((e: any) => {
+    if (!activeTab || !user) return;
+    
+    const position = e.position;
+    if (position) {
+      updateCursorPosition(activeTab.fileId, user.id, {
+        line: position.lineNumber,
+        column: position.column
+      });
+    }
+  }, [activeTab, user, updateCursorPosition]);
+
+  // Handle file saving
+  const handleSaveFile = useCallback(async () => {
+    if (!activeTab || !user) return;
+    
+    try {
+      await saveFile(activeTab.fileId, activeTab.content);
+      toast.success('File saved successfully');
+    } catch (error) {
+      console.error('Error saving file:', error);
+      toast.error('Failed to save file');
+    }
+  }, [activeTab, user, saveFile]);
 
   // Handle file selection from parent (only when selected file actually changes)
   useEffect(() => {
@@ -124,24 +157,6 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
     };
   }, [selectedFile?.fileId, selectedFile?.name, selectedFile?.path, activeTab?.fileId, tabs.length, setActiveTab, addTab]);
 
-  // Handle saving files
-  const handleSaveFile = useCallback(async (tabIndex: number) => {
-    const tab = tabs[tabIndex];
-    if (!tab || !tab.isModified) return;
-
-    try {
-      await fileAPI.updateFileContent(tab.fileId, tab.content);
-      
-      // Update tab to mark as saved
-      editorContext.setTabModified(tabIndex, false);
-
-      toast.success(`${tab.name} saved successfully`);
-    } catch (error) {
-      console.error('Error saving file:', error);
-      toast.error(`Failed to save ${tab.name}`);
-    }
-  }, [tabs, editorContext]);
-
   // Handle editor mount
   const handleEditorMount = useCallback((editor: any, monaco: Monaco) => {
     editorRef.current = editor;
@@ -157,8 +172,18 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
       collaborationService.setUser({ id: user.id, name: user.name || 'User' });
     }
 
+    // Listen to cursor position changes
+    editor.onDidChangeCursorPosition((e: any) => {
+      try {
+        handleCursorPositionChange(e);
+      } catch (err) {
+        // avoid breaking editor due to listener error
+        console.error('Cursor position handler error', err);
+      }
+    });
+
     console.log('Monaco editor mounted successfully');
-  }, [roomId, user?.id, user?.name]);
+  }, [roomId, user?.id, user?.name, handleCursorPositionChange]);
 
   // Register Ctrl/Cmd+S for saving
   useEffect(() => {
@@ -167,9 +192,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
     const disposable = editor.addCommand(
       monacoRef.current!.KeyMod.CtrlCmd | monacoRef.current!.KeyCode.KeyS,
       () => {
-        if (typeof activeTabIndex === 'number' && activeTabIndex >= 0) {
-          handleSaveFile(activeTabIndex);
-        }
+        handleSaveFile();
       }
     );
     return () => {
@@ -195,6 +218,41 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
     }
   }, [activeTab?.fileId]);
 
+  // Cleanup editing status when component unmounts or active tab changes
+  useEffect(() => {
+    return () => {
+      if (user && activeTab?.fileId) {
+        stopEditing(activeTab.fileId, user.id);
+      }
+    };
+  }, [user, activeTab?.fileId, stopEditing]);
+
+  // Stop editing previous file when switching tabs
+  useEffect(() => {
+    if (user && activeTab?.fileId) {
+      // Stop editing previous file if it exists
+      const previousFileId = lastProcessedSelectedFileId.current;
+      if (previousFileId && previousFileId !== activeTab.fileId) {
+        stopEditing(previousFileId, user.id);
+      }
+    }
+  }, [activeTab?.fileId, user, stopEditing]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSaveFile();
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleSaveFile]);
+
   return (
     <div className="flex flex-col h-full">
       {/* File Tab Bar */}
@@ -211,8 +269,8 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
         <div className="absolute top-2 right-2 z-10 flex gap-2">
           {activeTab && (
             <button
-              className="px-2 py-1 text-xs bg-grey-100 opacity-75 text-white rounded hover:bg-blue-500"
-              onClick={() => handleSaveFile(activeTabIndex)}
+              className="px-2 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+              onClick={handleSaveFile}
               title="Save (Ctrl/Cmd+S)"
             >
               Save

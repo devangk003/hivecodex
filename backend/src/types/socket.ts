@@ -84,6 +84,20 @@ export interface ChatUpdatedPayload {
   timestamp: string;
 }
 
+// Editor events shared types
+export interface EditorCursorPosition {
+  line: number;
+  column: number;
+}
+
+export interface EditorFileEventData {
+  fileId: string;
+  userId: string;
+  username?: string;
+  cursorPosition?: EditorCursorPosition;
+  timestamp?: Date;
+}
+
 export interface SocketData {
   roomId?: string;
   userId?: string;
@@ -121,6 +135,10 @@ export interface ServerToClientEvents {
   "file-created": (data: any) => void;
   "file-updated": (data: any) => void;
   "file-renamed": (data: any) => void;
+  "user-started-editing": (data: EditorFileEventData) => void;
+  "user-stopped-editing": (data: { fileId: string; userId: string }) => void;
+  "user-cursor-update": (data: { fileId: string; userId: string; cursorPosition: EditorCursorPosition }) => void;
+  "file-saved": (data: { fileId: string; userId: string; timestamp: Date }) => void;
   "error": (data: ErrorPayload) => void;
   "ping": () => void;
 }
@@ -151,6 +169,10 @@ export interface ClientToServerEvents {
   "file-created": (data: any) => void;
   "file-updated": (data: any) => void;
   "file-renamed": (data: any) => void;
+  "start-editing": (data: EditorFileEventData) => void;
+  "stop-editing": (data: { fileId: string; userId: string }) => void;
+  "update-cursor": (data: { fileId: string; userId: string; cursorPosition: EditorCursorPosition }) => void;
+  "file-saved": (data: { fileId: string; userId: string; timestamp: Date }) => void;
   "pong": () => void;
 }
 

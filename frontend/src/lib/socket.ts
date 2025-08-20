@@ -27,6 +27,11 @@ class SocketService {
     return SocketService.instance;
   }
 
+  // Expose the underlying socket instance (read-only)
+  getSocket(): Socket | null {
+    return this.socket;
+  }
+
   isConnected(): boolean {
     return this.socket && this.socket.connected;
   }

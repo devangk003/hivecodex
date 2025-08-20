@@ -6,6 +6,8 @@ import {
   SocketData,
   CollaborativeChangePayload,
   TextOperationPayload,
+  EditorFileEventData,
+  EditorCursorPosition,
 } from "../../types/socket";
 import { updateUserCursorPosition, setUserTyping, updateUserActivity } from "../../utils/userHelpers";
 
@@ -228,6 +230,59 @@ export function registerEditorHandlers(
     const { roomId } = socket.data || {};
     if (!roomId) return;
     socket.to(roomId).emit("sync-drawing", data);
+    updateUserActivity(socket.id);
+  });
+
+  // File editing status tracking
+  socket.on('start-editing', (data: EditorFileEventData) => {
+    const { roomId } = socket.data || {};
+    if (!roomId) return;
+    
+    // Broadcast to other users in the room
+    socket.to(roomId).emit('user-started-editing', {
+      fileId: data.fileId,
+      userId: data.userId,
+      username: data.username,
+      cursorPosition: data.cursorPosition
+    });
+    updateUserActivity(socket.id);
+  });
+
+  socket.on('stop-editing', (data: { fileId: string; userId: string }) => {
+    const { roomId } = socket.data || {};
+    if (!roomId) return;
+    
+    // Broadcast to other users in the room
+    socket.to(roomId).emit('user-stopped-editing', {
+      fileId: data.fileId,
+      userId: data.userId
+    });
+    updateUserActivity(socket.id);
+  });
+
+  socket.on('update-cursor', (data: { fileId: string; userId: string; cursorPosition: EditorCursorPosition }) => {
+    const { roomId } = socket.data || {};
+    if (!roomId) return;
+    
+    // Broadcast to other users in the room
+    socket.to(roomId).emit('user-cursor-update', {
+      fileId: data.fileId,
+      userId: data.userId,
+      cursorPosition: data.cursorPosition
+    });
+    updateUserActivity(socket.id);
+  });
+
+  socket.on('file-saved', (data: { fileId: string; userId: string; timestamp: Date }) => {
+    const { roomId } = socket.data || {};
+    if (!roomId) return;
+    
+    // Broadcast to other users in the room
+    socket.to(roomId).emit('file-saved', {
+      fileId: data.fileId,
+      userId: data.userId,
+      timestamp: data.timestamp
+    });
     updateUserActivity(socket.id);
   });
 }

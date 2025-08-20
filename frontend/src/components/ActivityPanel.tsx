@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { useUserStatus, UserStatus } from '@/hooks/useUserStatus';
 import { useAuth } from '@/contexts/AuthContext';
 import type { RoomParticipant } from '@/types/userStatus';
+import { useFileEditing } from '@/contexts/FileEditingContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -215,31 +216,51 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   const MemberItem: React.FC<{
     participant: RoomParticipant;
     isOffline?: boolean;
-  }> = ({ participant, isOffline = false }) => (
-    <div
-      className={`flex items-center px-2 py-1 rounded hover:bg-discord-sidebar-hover transition-colors cursor-pointer ${isOffline ? 'opacity-50' : ''}`}
-    >
-      <UserAvatar participant={participant} />
-      <div className="ml-3 flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-sm font-medium ${isOffline ? 'text-muted-foreground' : 'text-foreground'} truncate`}
-          >
-            {participant.name}
-          </span>
+  }> = ({ participant, isOffline = false }) => {
+    const { editingUsers } = useFileEditing();
+    
+    // Check if this user is currently editing any file
+    const isEditing = Object.values(editingUsers).some(users => 
+      users.some(user => user.userId === participant.id)
+    );
+    
+    // Get the file being edited by this user
+    const editingFile = Object.entries(editingUsers).find(([fileId, users]) => 
+      users.some(user => user.userId === participant.id)
+    );
+    
+    return (
+      <div
+        className={`flex items-center px-2 py-1 rounded hover:bg-discord-sidebar-hover transition-colors cursor-pointer ${isOffline ? 'opacity-50' : ''}`}
+      >
+        <UserAvatar participant={participant} />
+        <div className="ml-3 flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-sm font-medium ${isOffline ? 'text-muted-foreground' : 'text-foreground'} truncate`}
+            >
+              {participant.name}
+            </span>
+            {isEditing && (
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shadow-lg shadow-green-400/50" />
+                <span className="text-xs text-green-400">
+                  Editing {editingFile ? editingFile[0] : 'file'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="w-full bg-discord-activity border-l border-border flex flex-col h-full">
       <div className="p-4 border-b border-border flex-shrink-0">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">
-            Participants ({onlineParticipants.length} Online,{' '}
-            {awayParticipants.length} Away, {offlineParticipants.length}{' '}
-            Offline)
+            Participants ({totalOnline} Online, {awayParticipants.length} Away, {offlineParticipants.length} Offline)
           </h2>
           {onClose && (
             <Button

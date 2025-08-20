@@ -11,6 +11,8 @@ import crypto from "crypto";
 import multer from "multer";
 import AdmZip from "adm-zip";
 import path from "path";
+import rateLimit from "express-rate-limit";
+import { body, validationResult } from "express-validator";
 
 // Import types
 import { 
@@ -36,7 +38,7 @@ import { setGridFSBucket, authRoutes } from "./routes/auth";
 import aiRoutes from "./routes/ai";
 import roomRoutes from "./routes/roomRoutes";
 import { User, Room, Message, FileMeta } from "./database/models";
-import { JWT_SECRET, MONGO_URI, PORT } from "./config/constants";
+import { JWT_SECRET, MONGO_URI, PORT, SECURITY_CONFIG } from "./config/constants";
 
 // Load environment variables
 dotenv.config();
@@ -44,8 +46,184 @@ dotenv.config();
 // Create Express app
 const app = express();
 
-// Add comprehensive request logging middleware
+// ==================== SECURITY CONFIGURATION ====================
+
+// Security headers middleware (using basic Express headers since helmet.js not available)
 app.use((req, res, next) => {
+  // Prevent clickjacking
+  res.setHeader('X-Frame-Options', SECURITY_CONFIG.SECURITY_HEADERS.X_FRAME_OPTIONS);
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', SECURITY_CONFIG.SECURITY_HEADERS.X_CONTENT_TYPE_OPTIONS);
+  // Enable XSS protection
+  res.setHeader('X-XSS-Protection', SECURITY_CONFIG.SECURITY_HEADERS.X_XSS_PROTECTION);
+  // Referrer policy
+  res.setHeader('Referrer-Policy', SECURITY_CONFIG.SECURITY_HEADERS.REFERRER_POLICY);
+  // Content Security Policy
+  res.setHeader('Content-Security-Policy', SECURITY_CONFIG.SECURITY_HEADERS.CONTENT_SECURITY_POLICY);
+  // Permissions policy
+  res.setHeader('Permissions-Policy', SECURITY_CONFIG.SECURITY_HEADERS.PERMISSIONS_POLICY);
+  next();
+});
+
+// Rate limiting configuration
+const createRateLimiter = (windowMs: number, max: number, message: string) => {
+  return rateLimit({
+    windowMs,
+    max,
+    message: {
+      success: false,
+      message,
+      timestamp: new Date()
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req: express.Request, res: express.Response) => {
+      res.status(429).json({
+        success: false,
+        message,
+        timestamp: new Date(),
+        retryAfter: Math.ceil(windowMs / 1000)
+      });
+    }
+  });
+};
+
+// Apply rate limiting to different endpoints
+const authLimiter = createRateLimiter(
+  SECURITY_CONFIG.AUTH_RATE_LIMIT.windowMs, 
+  SECURITY_CONFIG.AUTH_RATE_LIMIT.max, 
+  'Too many authentication attempts, please try again later'
+);
+const generalLimiter = createRateLimiter(
+  SECURITY_CONFIG.GENERAL_RATE_LIMIT.windowMs, 
+  SECURITY_CONFIG.GENERAL_RATE_LIMIT.max, 
+  'Too many requests, please try again later'
+);
+const strictLimiter = createRateLimiter(
+  SECURITY_CONFIG.STRICT_RATE_LIMIT.windowMs, 
+  SECURITY_CONFIG.STRICT_RATE_LIMIT.max, 
+  'Too many requests, please try again later'
+);
+
+// Input sanitization middleware for XSS prevention
+const sanitizeInput = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Sanitize body
+  if (req.body) {
+    Object.keys(req.body).forEach(key => {
+      if (typeof req.body[key] === 'string') {
+        // Remove potentially dangerous HTML/script tags
+        req.body[key] = req.body[key]
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+          .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+          .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+          .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '')
+          .replace(/javascript:/gi, '')
+          .replace(/vbscript:/gi, '')
+          .replace(/onload=/gi, '')
+          .replace(/onerror=/gi, '')
+          .replace(/onclick=/gi, '');
+      }
+    });
+  }
+
+  // Sanitize query parameters
+  if (req.query) {
+    Object.keys(req.query).forEach(key => {
+      if (typeof req.query[key] === 'string') {
+        req.query[key] = (req.query[key] as string)
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+          .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+          .replace(/javascript:/gi, '')
+          .replace(/vbscript:/gi, '');
+      }
+    });
+  }
+
+  next();
+};
+
+// Request size limits and validation
+const requestSizeLimiter = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
+  const contentLength = parseInt(req.headers['content-length'] || '0');
+  const maxSize = SECURITY_CONFIG.MAX_REQUEST_SIZE;
+  
+  if (contentLength > maxSize) {
+    res.status(413).json({
+      success: false,
+      message: 'Request entity too large',
+      timestamp: new Date()
+    });
+    return;
+  }
+  
+  next();
+};
+
+// Enhanced CORS configuration with origin validation
+const allowedOrigins = SECURITY_CONFIG.ALLOWED_ORIGINS;
+
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`Blocked request from unauthorized origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  credentials: true,
+  optionsSuccessStatus: 200,
+  allowedHeaders: [
+    'Origin', 
+    'X-Requested-With', 
+    'Content-Type', 
+    'Accept', 
+    'Authorization',
+    'X-API-Key'
+  ]
+};
+
+// ==================== MIDDLEWARE STACK ====================
+
+// Apply security middleware first
+app.use(cors(corsOptions));
+app.use(requestSizeLimiter);
+app.use(sanitizeInput);
+
+// Apply rate limiting
+app.use('/api/auth', authLimiter);
+app.use('/api/', generalLimiter);
+app.use('/api/rooms', strictLimiter);
+
+// Body parsing with strict limits
+app.use(express.json({ 
+  limit: `${SECURITY_CONFIG.MAX_REQUEST_SIZE / (1024 * 1024)}mb`,
+  strict: true,
+  verify: (req: express.Request, res: express.Response, buf: Buffer) => {
+    try {
+      JSON.parse(buf.toString());
+    } catch (e) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid JSON payload',
+        timestamp: new Date()
+      });
+      throw new Error('Invalid JSON');
+    }
+  }
+}));
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: `${SECURITY_CONFIG.MAX_REQUEST_SIZE / (1024 * 1024)}mb`,
+  parameterLimit: SECURITY_CONFIG.MAX_PARAMETERS
+}));
+
+// Add comprehensive request logging middleware
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   const startTime = Date.now();
   const timestamp = new Date().toISOString();
   
@@ -64,7 +242,7 @@ app.use((req, res, next) => {
 
   // Override res.json to log responses
   const originalJson = res.json;
-  res.json = function(body) {
+  res.json = function(body: any) {
     const duration = Date.now() - startTime;
     console.log(`✅ [${new Date().toISOString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
     console.log(`📤 Response: ${JSON.stringify(body, null, 2)}`);
@@ -73,7 +251,7 @@ app.use((req, res, next) => {
 
   // Override res.send to log responses
   const originalSend = res.send;
-  res.send = function(body) {
+  res.send = function(body: any) {
     const duration = Date.now() - startTime;
     console.log(`✅ [${new Date().toISOString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
     console.log(`📤 Response: ${body}`);
@@ -83,25 +261,105 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware stack
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:8080";
-app.use(cors({
-  origin: [FRONTEND_URL],
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-  credentials: true,
-}));
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+// ==================== VALIDATION MIDDLEWARE ====================
+
+// Common validation rules
+const commonValidations = {
+  name: body('name')
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Name must be between 1 and 100 characters')
+    .escape(),
+  
+  email: body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Must be a valid email address'),
+  
+  password: body('password')
+    .isLength({ min: 8, max: 128 })
+    .withMessage('Password must be between 8 and 128 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one lowercase letter, one uppercase letter, and one number'),
+  
+  message: body('message')
+    .trim()
+    .isLength({ min: 1, max: 1000 })
+    .withMessage('Message must be between 1 and 1000 characters')
+    .escape(),
+  
+  roomName: body('name')
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Room name must be between 1 and 100 characters')
+    .escape()
+};
+
+// Validation result handler
+const handleValidationErrors = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array().map(err => ({
+        field: (err as any).path || 'unknown',
+        message: err.msg
+      })),
+      timestamp: new Date()
+    });
+    return;
+  }
+  next();
+};
+
+// ==================== GLOBAL ERROR HANDLER ====================
 
 // Global error handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction): void => {
   const timestamp = new Date().toISOString();
-  const status = err.status || 500;
+  
+  // Handle CORS errors
+  if (err.message === 'Not allowed by CORS') {
+    res.status(403).json({
+      success: false,
+      message: 'Origin not allowed',
+      timestamp,
+      endpoint: `${req.method} ${req.url}`,
+    });
+    return;
+  }
+  
+  // Handle JSON parsing errors
+  if (err.message === 'Invalid JSON') {
+    res.status(400).json({
+      success: false,
+      message: 'Invalid JSON payload',
+      timestamp,
+      endpoint: `${req.method} ${req.url}`,
+    });
+    return;
+  }
+  
+  // Handle rate limiting errors
+  if ((err as any).status === 429) {
+    res.status(429).json({
+      success: false,
+      message: 'Too many requests',
+      timestamp,
+      endpoint: `${req.method} ${req.url}`,
+      retryAfter: (err as any).headers?.['retry-after'] || 900
+    });
+    return;
+  }
+  
+  const status = (err as any).status || 500;
   res.status(status).json({
-    error: true,
+    success: false,
     message: err.message || 'Internal Server Error',
     timestamp,
     endpoint: `${req.method} ${req.url}`,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
 
@@ -191,7 +449,7 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
 // Essential API endpoints that frontend needs
 
 // Health check endpoint
-app.get("/health", (req, res) => {
+app.get("/health", (req: express.Request, res: express.Response) => {
   res.json({ 
     status: "OK", 
     timestamp: new Date().toISOString(),
@@ -201,7 +459,7 @@ app.get("/health", (req, res) => {
 });
 
 // Debug endpoint to test if routes are working
-app.get("/api/test", (req, res) => {
+app.get("/api/test", (req: express.Request, res: express.Response) => {
   res.json({ 
     message: "API routes are working", 
     timestamp: new Date().toISOString()
@@ -209,7 +467,15 @@ app.get("/api/test", (req, res) => {
 });
 
 // Authentication endpoints (from server.js)
-app.post("/api/register", upload.single("profilePic"), async (req, res): Promise<any> => {
+app.post("/api/register", 
+  upload.single("profilePic"),
+  [
+    commonValidations.name,
+    commonValidations.email,
+    commonValidations.password
+  ],
+  handleValidationErrors,
+  async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { name, email, password, rememberMe } = req.body;
@@ -280,7 +546,13 @@ app.post("/api/register", upload.single("profilePic"), async (req, res): Promise
   }
 });
 
-app.post("/api/login", async (req, res): Promise<any> => {
+app.post("/api/login", 
+  [
+    commonValidations.email,
+    commonValidations.password
+  ],
+  handleValidationErrors,
+  async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n🔐 [${timestamp}] LOGIN ATTEMPT`);
   console.log(`📧 Email: ${req.body.email}`);
@@ -382,7 +654,7 @@ app.get("/api/user", authenticateToken, async (req, res): Promise<any> => {
 });
 
 // Get user's rooms
-app.get("/api/user/rooms", authenticateToken, async (req, res) => {
+app.get("/api/user/rooms", authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     await dbConnectionPromise;
     const userIdStr = (req as any).user.id;
@@ -406,7 +678,7 @@ app.get("/api/user/rooms", authenticateToken, async (req, res) => {
 });
 
 // Get user activity status
-app.get("/api/user/activity-status", authenticateToken, async (req, res) => {
+app.get("/api/user/activity-status", authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     await dbConnectionPromise;
     const user = await User.findById((req as any).user.id).select('activityStatus').lean();
@@ -461,7 +733,7 @@ app.put("/api/user/activity-status", authenticateToken, async (req, res): Promis
 });
 
 // Rooms endpoints
-app.get("/api/rooms", authenticateToken, async (req, res) => {
+app.get("/api/rooms", authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     await dbConnectionPromise;
     const page = parseInt(req.query.page as string) || 1;
@@ -499,7 +771,13 @@ app.get("/api/rooms", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/rooms", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/rooms", 
+  authenticateToken,
+  [
+    commonValidations.roomName
+  ],
+  handleValidationErrors,
+  async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { name, description, isPrivate, password } = req.body;
@@ -553,7 +831,7 @@ app.post("/api/rooms", authenticateToken, async (req, res): Promise<any> => {
   }
 });
 
-app.post("/api/rooms/:roomId/join", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/rooms/:roomId/join", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -605,7 +883,7 @@ app.post("/api/rooms/:roomId/join", authenticateToken, async (req, res): Promise
   }
 });
 
-app.get("/api/rooms/:roomId", authenticateToken, async (req, res): Promise<any> => {
+app.get("/api/rooms/:roomId", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -777,7 +1055,7 @@ app.post("/api/profile/update", authenticateToken, upload.single("profilePic"), 
 });
 
 // Basic error handling middleware
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction): void => {
   console.error(err.stack);
   res.status(500).json({
     success: false,
@@ -1243,7 +1521,7 @@ app.post("/api/rooms/:roomId/invite", authenticateToken, async (req, res): Promi
 });
 
 // Fix file download endpoint to match frontend expectation
-app.get("/api/files/:fileId/download", async (req, res) => {
+app.get("/api/files/:fileId/download", async (req: express.Request, res: express.Response) => {
   try {
     await dbConnectionPromise;
     const { fileId } = req.params;
@@ -1515,7 +1793,7 @@ app.put("/api/files/:fileId/content", authenticateToken, async (req, res): Promi
 });
 
 // Get room messages
-app.get("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Promise<any> => {
+app.get("/api/rooms/:roomId/messages", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n💬 [${timestamp}] GET MESSAGES REQUEST`);
   console.log(`🏠 Room ID: ${req.params.roomId}`);
@@ -1578,7 +1856,13 @@ app.get("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Prom
 });
 
 // Post message to room
-app.post("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/rooms/:roomId/messages", 
+  authenticateToken,
+  [
+    commonValidations.message
+  ],
+  handleValidationErrors,
+  async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n💬 [${timestamp}] POST MESSAGE REQUEST`);
   console.log(`🏠 Room ID: ${req.params.roomId}`);
@@ -1654,7 +1938,7 @@ app.post("/api/rooms/:roomId/messages", authenticateToken, async (req, res): Pro
 });
 
 // Add reaction to message
-app.post("/api/messages/:messageId/reactions", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/messages/:messageId/reactions", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n😀 [${timestamp}] ADD REACTION REQUEST`);
   console.log(`📝 Message ID: ${req.params.messageId}`);
@@ -1733,7 +2017,7 @@ app.post("/api/messages/:messageId/reactions", authenticateToken, async (req, re
 });
 
 // Remove reaction from message
-app.delete("/api/messages/:messageId/reactions", authenticateToken, async (req, res): Promise<any> => {
+app.delete("/api/messages/:messageId/reactions", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n😞 [${timestamp}] REMOVE REACTION REQUEST`);
   console.log(`📝 Message ID: ${req.params.messageId}`);
@@ -1802,7 +2086,7 @@ app.delete("/api/messages/:messageId/reactions", authenticateToken, async (req, 
 });
 
 // Get room files
-app.get("/api/rooms/:roomId/files", authenticateToken, async (req, res): Promise<any> => {
+app.get("/api/rooms/:roomId/files", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -1821,7 +2105,7 @@ app.get("/api/rooms/:roomId/files", authenticateToken, async (req, res): Promise
 });
 
 // Create empty file in room
-app.post("/api/rooms/:roomId/create-file", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/rooms/:roomId/create-file", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -1868,7 +2152,7 @@ app.post("/api/rooms/:roomId/create-file", authenticateToken, async (req, res): 
 });
 
 // Create folder in room
-app.post("/api/rooms/:roomId/create-folder", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/rooms/:roomId/create-folder", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -1898,7 +2182,7 @@ app.post("/api/rooms/:roomId/create-folder", authenticateToken, async (req, res)
 });
 
 // Move file or folder (change parent)
-app.patch("/api/rooms/:roomId/move", authenticateToken, async (req, res): Promise<any> => {
+app.patch("/api/rooms/:roomId/move", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -1931,7 +2215,7 @@ app.patch("/api/rooms/:roomId/move", authenticateToken, async (req, res): Promis
 });
 
 // Bulk operations (delete)
-app.patch("/api/rooms/:roomId/files", authenticateToken, async (req, res): Promise<any> => {
+app.patch("/api/rooms/:roomId/files", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -1968,7 +2252,7 @@ app.patch("/api/rooms/:roomId/files", authenticateToken, async (req, res): Promi
 });
 
 // Upload file to room
-app.post("/api/rooms/:roomId/files", authenticateToken, upload.single("file"), async (req, res): Promise<any> => {
+app.post("/api/rooms/:roomId/files", authenticateToken, upload.single("file"), async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n📁 [${timestamp}] FILE UPLOAD REQUEST`);
   console.log(`🏠 Room ID: ${req.params.roomId}`);

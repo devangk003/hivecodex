@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { aiService } from '@/services/aiService';
+import { getLanguageFromExtension, formatFileSize } from '@/utils';
 
 // --- INTERFACES (UNCHANGED) ---
 interface FileAttachment {
@@ -88,6 +89,13 @@ interface AIAssistantProps {
   activeFileLanguage?: string;
   cursorPosition?: { line: number; column: number };
   theme?: 'dark' | 'light';
+  workspaceFiles?: Array<{
+    name: string;
+    path: string;
+    content: string;
+    language: string;
+  }>;
+  onAttachWorkspaceFile?: (filePath: string) => void;
 }
 
 
@@ -316,7 +324,7 @@ const HiveAIWelcomeScreen = () => (
       </p>
       <div className="flex items-center text-sm text-zinc-500 text-[12px]">
         <Paperclip className="w-4 h-4 mr-2 text-[12px]" />
-        to attach context
+        to attach workspace files
       </div>
     </div>
 );
@@ -331,6 +339,8 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   activeFileLanguage,
   cursorPosition,
   theme = 'dark',
+  workspaceFiles = [],
+  onAttachWorkspaceFile,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -338,6 +348,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [isAIOnline, setIsAIOnline] = useState(true);
   const [selectedModel, setSelectedModel] = useState('Gemini 2.5 Pro');
+  const [showFilePicker, setShowFilePicker] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -366,6 +377,30 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
 
   const removeAttachment = (id: string) => {
     setAttachments(prev => prev.filter(a => a.id !== id));
+  };
+
+  // File attachment handling - for workspace files
+  const handleFileAttachment = () => {
+    if (workspaceFiles.length > 0) {
+      setShowFilePicker(true);
+    } else {
+      console.log('No workspace files available');
+    }
+  };
+
+  const triggerFileAttachment = () => {
+    handleFileAttachment();
+  };
+
+  const attachWorkspaceFile = (filePath: string) => {
+    const file = workspaceFiles.find(f => f.path === filePath);
+    if (file) {
+      addFileAttachment(file.name, file.content, file.language);
+      if (onAttachWorkspaceFile) {
+        onAttachWorkspaceFile(filePath);
+      }
+    }
+    setShowFilePicker(false);
   };
 
   const generateCodeSuggestions = (input: string): CodeSuggestion[] => {
@@ -561,53 +596,161 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
           )}
         </div>
 
-        {/* --- REDESIGNED INPUT AREA --- */}
-        <div className="p-3 border-t border-zinc-800 bg-zinc-950 ">
-            <div className="relative ">
-          <Textarea
+        {/* --- FILE ATTACHMENTS PREVIEW --- */}
+        {attachments.length > 0 && (
+          <div className="px-3 py-2 border-t border-zinc-800 bg-zinc-900/50">
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((attachment) => (
+                <div
+                  key={attachment.id}
+                  className="flex items-center gap-2 bg-zinc-800/70 rounded-lg px-3 py-2 text-xs"
+                >
+                  <FileText className="h-3 w-3 text-blue-400" />
+                  <span className="text-zinc-300">{attachment.name}</span>
+                  <span className="text-zinc-500">({formatFileSize(attachment.size)})</span>
+                  <Badge variant="outline" className="text-xs bg-zinc-700/50 text-zinc-400 border-zinc-600">
+                    {attachment.language}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeAttachment(attachment.id)}
+                    className="h-5 w-5 p-0 text-zinc-500 hover:text-zinc-300"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* --- REDESIGNED INPUT AREA WITH PROPER ALIGNMENT --- */}
+        <div className="p-3 border-t border-zinc-800 bg-zinc-950">
+          <div className="relative">
+            {/* Text Input - Full Width Container */}
+            <Textarea
               ref={inputRef}
               placeholder="Provide instructions..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage(e as any);
-            }
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage(e as any);
+                }
               }}
+              disabled={isLoading || !isAIOnline}
+              className="w-full bg-zinc-900 border-zinc-700/50 rounded-lg text-zinc-100 placeholder:text-zinc-500 resize-none min-h-[50px] max-h-[200px] pr-32"
+              rows={1}
+            />
+            
+            {/* Controls positioned inside the text box */}
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
+              {/* File Attachment Button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={triggerFileAttachment}
+                    className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
                     disabled={isLoading || !isAIOnline}
-                    className="bg-zinc-900 border-zinc-700/50 rounded-lg text-zinc-100 placeholder:text-zinc-500 pr-40 resize-none"
-                    rows={1}
-                />
-                {/* CONTROLS MOVED AND REALIGNED HERE */}
-                <div className="absolute transform bottom-0.5 flex items-center justify-between w-full">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-100 px-2">
-                                <Brain className="h-3 w-3" />
-                                {selectedModel}
-                                <ChevronDown className="h-3 w-3" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => setSelectedModel('Gemini 2.5 Pro')}>
-                                Gemini 2.5 Pro
-                            </DropdownMenuItem>
-                            <DropdownMenuItem disabled className='line-through'>Claude 3 Sonnet</DropdownMenuItem>
-                            <DropdownMenuItem disabled className='line-through'>GPT-4o</DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Button
-                        type="submit"
-                        onClick={handleSendMessage}
-                        disabled={!input.trim() || isLoading || !isAIOnline}
-                        className="h-7 w-7 p-0 hover:bg-blue-700 disabled:opacity-50"
-                    >
-                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </Button>
-                </div>
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Attach workspace files</TooltipContent>
+              </Tooltip>
+
+              {/* Model Selection */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-8 px-2 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 border border-zinc-700/50"
+                    disabled={isLoading || !isAIOnline}
+                  >
+                    <Brain className="h-3 w-3 mr-1" />
+                    {selectedModel}
+                    <ChevronDown className="h-3 w-3 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setSelectedModel('Gemini 2.5 Pro')}>
+                    Gemini 2.5 Pro
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled className='line-through'>Claude 3 Sonnet</DropdownMenuItem>
+                  <DropdownMenuItem disabled className='line-through'>GPT-4o</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Send Button */}
+              <Button
+                type="submit"
+                onClick={handleSendMessage}
+                disabled={!input.trim() || isLoading || !isAIOnline}
+                className="h-8 w-8 p-0 hover:bg-blue-700 disabled:opacity-50 bg-blue-600 hover:bg-blue-700"
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
             </div>
+          </div>
         </div>
+
+        {/* File Picker Modal */}
+        {showFilePicker && (
+          <div 
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            onClick={() => setShowFilePicker(false)}
+          >
+            <div 
+              className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-h-96 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-zinc-100">Attach Workspace File</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowFilePicker(false)}
+                  className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-100"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {workspaceFiles.length > 0 ? (
+                  workspaceFiles.map((file) => (
+                    <div
+                      key={file.path}
+                      className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg hover:bg-zinc-800/70 cursor-pointer transition-colors"
+                      onClick={() => attachWorkspaceFile(file.path)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-4 w-4 text-blue-400" />
+                        <div>
+                          <div className="text-sm font-medium text-zinc-200">{file.name}</div>
+                          <div className="text-xs text-zinc-500">{file.path}</div>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="text-xs bg-zinc-700/50 text-zinc-400 border-zinc-600">
+                        {file.language}
+                      </Badge>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-zinc-500">
+                    <FileText className="h-12 w-12 mx-auto mb-3 text-zinc-600" />
+                    <p>No workspace files available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </TooltipProvider>
