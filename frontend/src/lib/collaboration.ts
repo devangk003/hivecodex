@@ -88,6 +88,9 @@ class CollaborationService {
     socketService.onCollaborativeChange((change) => this.receiveRemoteChange(change));
     socketService.onCollaborativeAck(({ fileId, ackVersion }) => this.handleAck(fileId, ackVersion));
     socketService.onFileSync(({ fileId, content, version }) => this.applyFileSync(fileId, content, version));
+    
+    // Set up cursor update listeners
+    socketService.onCursorUpdate((cursor) => this.updateRemoteCursor(cursor));
   }
 
   initializeFile(fileId: string, content: string, version: number = 0) {

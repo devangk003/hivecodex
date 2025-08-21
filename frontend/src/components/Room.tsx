@@ -76,8 +76,8 @@ const RoomContent = () => {
     currentRoomId, 
     enterRoom, 
     leaveRoom, 
-    updateParticipantStatus,
-    getUserStatus 
+    loadInitialParticipants,
+    isLoadingParticipants
   } = useUserStatusContext();
 
   // Panel state
@@ -102,48 +102,8 @@ const RoomContent = () => {
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
 
 
-  // --- Real-time DB participant list for accurate counters ---
-  const [dbParticipants, setDbParticipants] = useState<RoomParticipant[]>([]);
-  const fetchDbParticipants = useCallback(async () => {
-    if (!roomId) return;
-    try {
-      const list = await roomAPI.getRoomParticipants(roomId);
-      if (Array.isArray(list)) {
-        setDbParticipants(list.map((p: any) => ({
-          id: p.id || p.userId,
-          name: p.name || p.userName || 'Unknown',
-          profilePicId: p.profilePicId,
-          status: p.status,
-          isOnline: p.status === 'in-room' || p.status === 'online',
-          lastSeen: p.lastSeen,
-          currentRoomId: p.currentRoomId,
-        })));
-      }
-    } catch (e) {
-      console.warn('Failed to fetch participants from DB:', e);
-    }
-  }, [roomId]);
-
-  // Listen for socket events to refresh participants from DB
-  useEffect(() => {
-    if (!roomId) return;
-    const handleUpdate = () => fetchDbParticipants();
-    if (socketService && socketService.socket) {
-      socketService.socket.on('roomParticipants', handleUpdate);
-      socketService.socket.on('statusChange', handleUpdate);
-    }
-    // Initial fetch
-    fetchDbParticipants();
-    return () => {
-      if (socketService && socketService.socket) {
-        socketService.socket.off('roomParticipants', handleUpdate);
-        socketService.socket.off('statusChange', handleUpdate);
-      }
-    };
-  }, [roomId, fetchDbParticipants]);
-
-  // Fallback: use context participants if dbParticipants is empty
-  const roomParticipants: RoomParticipant[] = dbParticipants.length > 0 ? dbParticipants : Array.from(participants.values())
+  // Use participants directly from UserStatusContext (no more redundant API calls!)
+  const roomParticipants: RoomParticipant[] = Array.from(participants.values())
     .filter(p => !!p && !!p.userId)
     .map(p => ({
       id: p.userId,
@@ -181,37 +141,8 @@ const RoomContent = () => {
     fetchRoomData();
   }, [roomId]);
 
-  // Fallback: fetch participants via REST to seed context so ActivityPanel shows everyone
-  useEffect(() => {
-    if (!roomId) return;
-    let cancelled = false;
-
-    const seedParticipantsFromApi = async () => {
-      try {
-        const list = await roomAPI.getRoomParticipants(roomId);
-        if (cancelled || !Array.isArray(list)) return;
-        (list as APIParticipant[]).forEach(p => {
-          const isOnline = !!p.online;
-          updateParticipantStatus({
-            userId: p.id,
-            userName: p.name,
-            profilePicId: p.profilePicId,
-            globalStatus: isOnline ? 'online' : 'offline',
-            roomStatus: isOnline ? 'in-room' as const : 'offline',
-            currentRoomId: isOnline ? roomId : undefined,
-            lastSeen: !isOnline ? new Date() : undefined,
-            isInSameRoom: isOnline,
-          });
-        });
-      } catch (e) {
-        console.warn('Failed to seed participants from API', e);
-      }
-    };
-
-    seedParticipantsFromApi();
-    const t = setInterval(seedParticipantsFromApi, 10000); // light poll to keep fresh if sockets fail
-    return () => { cancelled = true; clearInterval(t); };
-  }, [roomId]); // Removed updateParticipantStatus from deps since it's now memoized
+  // Removed: loadInitialParticipants call - now handled entirely by socket events
+  // UserStatusContext will populate participants via granular socket events (userJoined, userLeft, statusChange)
 
   // Initialize room and socket connection
   useEffect(() => {
@@ -237,65 +168,14 @@ const RoomContent = () => {
 
     initializeRoom();
 
-    // Listen for participant updates
-    const handleParticipantJoined = (participant: APIParticipant) => {
-      updateParticipantStatus({
-        userId: participant.id,
-        userName: participant.name,
-        profilePicId: participant.profilePicId,
-        globalStatus: 'online',
-        roomStatus: 'in-room',
-        currentRoomId: roomId,
-        isInSameRoom: true,
-      });
-    };
-
-    const handleParticipantLeft = (data: { userId: string; name: string }) => {
-      const userData = getUserStatus(data.userId);
-      if (userData) {
-        updateParticipantStatus({
-          ...userData,
-          roomStatus: 'offline',
-          currentRoomId: undefined,
-          lastSeen: new Date(),
-          isInSameRoom: false,
-        });
-      }
-    };
-
-    const handleParticipantList = (participantList: APIParticipant[]) => {
-      participantList.forEach(p => {
-        const isOnline = p.online || false;
-        const status = isOnline ? 'in-room' : 'offline';
-        
-        updateParticipantStatus({
-          userId: p.id,
-          userName: p.name,
-          profilePicId: p.profilePicId,
-          globalStatus: isOnline ? 'online' : 'offline',
-          roomStatus: status,
-          currentRoomId: isOnline ? roomId : undefined,
-          lastSeen: !isOnline ? new Date() : undefined,
-          isInSameRoom: isOnline,
-        });
-      });
-    };
-
-    // Set up socket listeners
-    socketService.onUserJoined(handleParticipantJoined);
-    socketService.onUserLeft(handleParticipantLeft);
-    socketService.onRoomParticipants(handleParticipantList);
+    // UserStatusContext now handles all participant updates via granular socket events
+    // No need for additional socket listeners here!
 
     // Cleanup when leaving room
     return () => {
       isCleanedUp = true;
       leaveRoom();
-      // Remove socket listeners to prevent memory leaks and duplicate listeners
-      if (socketService.socket) {
-        socketService.socket.off('userJoined');
-        socketService.socket.off('userDisconnected');
-        socketService.socket.off('roomParticipants');
-      }
+      // UserStatusContext handles socket cleanup automatically
     };
   }, [roomId, user?.id]); // Only depend on roomId and user.id, not the entire user object
 

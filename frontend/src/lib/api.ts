@@ -269,18 +269,51 @@ export const fileAPI = {
     return response.data;
   },
 
-  // NOTE: The following file-related endpoints are not yet implemented in the backend.
-  // This section is kept as a placeholder for future development.
-  // moveFileOrFolder: async (...) => { ... },
-  // uploadFile: async (...) => { ... },
-  // uploadFolder: async (...) => { ... },
-  // uploadProject: async (...) => { ... },
-  // bulkOperations: async (...) => { ... },
-  // downloadFile: async (...) => { ... },
-  // updateFileContent: async (...) => { ... },
-  // deleteFile: async (...) => { ... },
-  // createFile: async (...) => { ... },
-  // createFolder: async (...) => { ... },
+  uploadFile: async (roomId: string, formData: FormData) => {
+    const response = await api.post(`/rooms/${roomId}/files/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  createFile: async (roomId: string, name: string, parentId?: string | null) => {
+    const response = await api.post(`/rooms/${roomId}/files/create`, {
+      name,
+      type: 'file',
+      parentId: parentId || null,
+    });
+    return response.data;
+  },
+
+  createFolder: async (roomId: string, name: string, parentId?: string | null) => {
+    const response = await api.post(`/rooms/${roomId}/files/create`, {
+      name,
+      type: 'folder',
+      parentId: parentId || null,
+    });
+    return response.data;
+  },
+
+  deleteFile: async (roomId: string, fileId: string) => {
+    const response = await api.delete(`/rooms/${roomId}/files/${fileId}`);
+    return response.data;
+  },
+
+  moveFileOrFolder: async (roomId: string, itemId: string, targetFolderId: string | null) => {
+    const response = await api.put(`/rooms/${roomId}/files/${itemId}/move`, {
+      targetFolderId,
+    });
+    return response.data;
+  },
+
+  renameFile: async (roomId: string, fileId: string, newName: string) => {
+    const response = await api.put(`/rooms/${roomId}/files/${fileId}/rename`, {
+      name: newName,
+    });
+    return response.data;
+  },
 };
 
 // Chat API

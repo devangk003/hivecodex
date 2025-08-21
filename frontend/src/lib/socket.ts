@@ -229,6 +229,33 @@ class SocketService {
     }
   }
 
+  // New granular event handlers for efficient real-time updates
+  onUserJoinedGranular(callback: (data: {
+    userId: string;
+    userName: string;
+    profilePicId?: string;
+    email?: string;
+    status?: string;
+    joinedAt?: Date;
+    timestamp: string;
+  }) => void) {
+    if (this.socket) {
+      this.socket.on('userJoined', callback);
+    }
+  }
+
+  onUserLeftGranular(callback: (data: {
+    userId: string;
+    userName: string;
+    status: string;
+    leftAt: Date;
+    timestamp: string;
+  }) => void) {
+    if (this.socket) {
+      this.socket.on('userLeft', callback);
+    }
+  }
+
   onUserStatus(
     callback: (status: { userId: string; online: boolean }) => void
   ) {
@@ -358,6 +385,19 @@ class SocketService {
   ) {
     if (this.socket) {
       this.socket.on('user-status-update', callback);
+    }
+  }
+
+  onStatusChange(
+    callback: (data: {
+      userId: string;
+      userName: string;
+      online: boolean;
+      timestamp: string;
+    }) => void
+  ) {
+    if (this.socket) {
+      this.socket.on('statusChange', callback);
     }
   }
 

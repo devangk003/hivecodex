@@ -81,12 +81,21 @@ export function registerRoomHandlers(
         }
       }
 
-      socket.to(roomId).emit("userJoined", {
-        userId,
-        userName: userName as string,
-        timestamp,
-      });
+      // Emit granular userJoined event with complete user profile data
+      const user = await User.findById(userId);
+      if (user) {
+        socket.to(roomId).emit("userJoined", {
+          userId,
+          userName: userName as string,
+          profilePicId: user.profilePicId?.toString(),
+          email: user.email,
+          status: 'in-room',
+          joinedAt: new Date(),
+          timestamp,
+        });
+      }
 
+      // Still emit roomParticipants for backward compatibility, but frontend should rely on granular events
       const participants = getUsersInRoom(roomId);
       io.to(roomId).emit("roomParticipants", participants);
     } catch (error) {
@@ -116,13 +125,22 @@ export function registerRoomHandlers(
         await room.save();
       }
 
+      // Emit granular userLeft event with user data
+      socket.to(roomId).emit("userLeft", {
+        userId,
+        userName: (userName as string) || "",
+        status: 'offline',
+        leftAt: new Date(),
+        timestamp: new Date().toISOString(),
+      });
+
+      // Keep backward compatibility events
       socket.to(roomId).emit("userDisconnected", {
         userId,
         userName: (userName as string) || "",
         timestamp: new Date().toISOString(),
       });
 
-      // Emit status change to room (optional: you may want to remove this if you only want to show offline on disconnect)
       io.to(roomId).emit("statusChange", {
         userId,
         userName: (userName as string) || "",
@@ -169,7 +187,17 @@ export function registerRoomHandlers(
   timestamp: new Date().toISOString(),
     });
 
+    // Emit granular userLeft event on disconnect
     setTimeout(() => {
+      socket.to(roomId).emit("userLeft", {
+        userId,
+        userName: (userName as string) || "",
+        status: 'offline',
+        leftAt: new Date(),
+        timestamp: new Date().toISOString(),
+      });
+      
+      // Keep backward compatibility
       socket.to(roomId).emit("userDisconnected", {
         userId,
         userName: (userName as string) || "",

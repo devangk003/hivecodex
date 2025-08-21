@@ -70,6 +70,18 @@ export interface DrawingPayload {
 export interface UserJoinedPayload {
   userId: string;
   userName: string;
+  profilePicId?: string;
+  email?: string;
+  status?: string;
+  joinedAt?: Date;
+  timestamp: string;
+}
+
+export interface UserLeftPayload {
+  userId: string;
+  userName: string;
+  status: string;
+  leftAt: Date;
   timestamp: string;
 }
 
@@ -109,6 +121,7 @@ export interface SocketData {
 // Server-to-client events (what server sends to client)
 export interface ServerToClientEvents {
   "userJoined": (data: UserJoinedPayload) => void;
+  "userLeft": (data: UserLeftPayload) => void;
   "userDisconnected": (data: UserJoinedPayload) => void;
   "roomParticipants": (users: any[]) => void;
   "message": (data: MessagePayload) => void;

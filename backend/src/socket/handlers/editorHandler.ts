@@ -1,4 +1,6 @@
 import { Server, Socket } from "socket.io";
+import mongoose from "mongoose";
+import { Room } from "../../database/models";
 import {
   ServerToClientEvents,
   ClientToServerEvents,
@@ -119,12 +121,21 @@ export function registerEditorHandlers(
   io: Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>,
   socket: Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>
 ): void {
-  socket.on("collaborative-change", (data: CollaborativeChangePayload) => {
+  socket.on("collaborative-change", async (data: CollaborativeChangePayload) => {
+    console.log('📥 Backend received collaborative-change:', data);
     const { roomId } = socket.data || {};
-    if (!roomId) return;
+    if (!roomId) {
+      console.log('❌ No roomId in socket data');
+      return;
+    }
     const { fileId, operations, baseVersion } = data;
     const canonical = getCanonical(socket, fileId);
-    if (!canonical) return;
+    if (!canonical) {
+      console.log('❌ No canonical state for file:', fileId);
+      return;
+    }
+
+    console.log('🔄 Processing operations:', operations, 'baseVersion:', baseVersion, 'canonical version:', canonical.version);
 
     let transformed = operations;
     if (baseVersion < canonical.version) {
@@ -142,6 +153,25 @@ export function registerEditorHandlers(
     canonical.content = newContent;
     canonical.operationsLog.push({ operations: transformed, version: canonical.version });
 
+    // Persist the collaborative change to the database
+    try {
+      const room = await Room.findOne({ 'files.fileId': new mongoose.Types.ObjectId(fileId) });
+      if (room) {
+        const fileIndex = room.files.findIndex((f: any) => f.fileId?.toString() === fileId);
+        if (fileIndex !== -1) {
+          const file = room.files[fileIndex] as any;
+          file.content = newContent;
+          file.lastModified = new Date();
+          file.lastModifiedBy = socket.data?.userId;
+          await room.save();
+          console.log('💾 Saved collaborative change to database for file:', fileId);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to save collaborative change to database:', error);
+    }
+
+    console.log('✅ Sending ack and broadcasting change to room:', roomId);
     socket.emit("collaborative-change-ack", { fileId, ackVersion: canonical.version });
     socket.to(roomId).emit("collaborative-change", {
       ...data,
@@ -153,9 +183,14 @@ export function registerEditorHandlers(
   });
 
   socket.on("cursor-update", (data) => {
+    console.log('👆 Backend received cursor-update:', data);
     const { roomId } = socket.data || {};
-    if (!roomId) return;
+    if (!roomId) {
+      console.log('❌ No roomId for cursor update');
+      return;
+    }
     updateUserCursorPosition(socket.id, data.cursorPosition);
+    console.log('✅ Broadcasting cursor update to room:', roomId);
     socket.to(roomId).emit("cursor-update", data);
     updateUserActivity(socket.id);
   });

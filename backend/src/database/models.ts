@@ -187,6 +187,10 @@ const roomSchema = new Schema<IRoom>({
       type: String,
       default: undefined
     },
+    content: {
+      type: String,
+      default: ""
+    },
     lines: { 
       type: Number,
       default: 0,
@@ -217,6 +221,16 @@ const roomSchema = new Schema<IRoom>({
     createdAt: {
       type: Date,
       default: Date.now
+    },
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null
+    },
+    lastModifiedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null
     }
   }],
   participantList: [{

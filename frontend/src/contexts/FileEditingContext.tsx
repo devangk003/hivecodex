@@ -217,7 +217,7 @@ export const FileEditingProvider: React.FC<FileEditingProviderProps> = ({ childr
   const saveFile = useCallback(async (fileId: string, content: string) => {
     try {
       // Save file content via API
-      const response = await fetch(`/api/files/${fileId}/content`, {
+      const response = await fetch(`/api/v1/files/${fileId}/content`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

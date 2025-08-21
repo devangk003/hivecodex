@@ -34,27 +34,61 @@ export class FileOperationsHandler {
   }
 
   /**
+   * Execute work in a MongoDB transaction if supported (replica set or mongos),
+   * otherwise gracefully fall back to non-transactional execution.
+   */
+  private async withTransactionFallback<T>(
+    work: (session: ClientSession | null) => Promise<T>
+  ): Promise<T> {
+    const session = await mongoose.startSession();
+    try {
+      try {
+        // Attempt transactional execution
+        return await session.withTransaction(async () => {
+          return await work(session);
+        });
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        // Error code 20 or message indicates standalone deployment (no transactions)
+        const isNoTxnSupport = err?.code === 20 || err?.codeName === 'IllegalOperation' ||
+          msg.includes('Transaction numbers are only allowed on a replica set member or mongos');
+        if (isNoTxnSupport) {
+          // Fallback: run without a session/transaction
+          return await work(null);
+        }
+        throw err;
+      }
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
    * Upload files with ACID compliance
    * Uses MongoDB transactions to ensure atomicity
    */
   async uploadFiles(roomId: string, files: Express.Multer.File[], parentId?: string): Promise<FileOperationResult> {
-    const session = await mongoose.startSession();
     try {
-      return await session.withTransaction(async () => {
+      return await this.withTransactionFallback(async (session) => {
         // Verify room access
-        const room = await Room.findById(roomId).session(session);
+        const q = Room.findOne({ id: roomId });
+        const room = session ? await q.session(session) : await q;
         if (!room) {
           throw new Error('Room not found');
         }
 
-        // Verify user has access to room
-        const user = await User.findById(this.userId).session(session);
-        if (!user || !room.participants || !Array.isArray(room.participants)) {
-            throw new Error('Access denied or invalid room participants');
+        // Verify user has access to room (owner or in participantList)
+        const uq = User.findById(this.userId);
+        const user = session ? await uq.session(session) : await uq;
+        if (!user) {
+          throw new Error('Access denied');
         }
 
-        if (!room.participants.map((p: any) => p.toString()).includes(user._id.toString())) {
-            throw new Error('Access denied');
+        const isOwner = room.userId?.toString() === user._id.toString();
+        const isParticipant = Array.isArray(room.participantList)
+          && room.participantList.some((p: any) => p?.userId?.toString() === user._id.toString());
+        if (!isOwner && !isParticipant) {
+          throw new Error('Access denied');
         }
 
 
@@ -88,7 +122,7 @@ export class FileOperationsHandler {
           uploadedFiles.push(newFile);
         }
 
-        await room.save({ session });
+        await room.save(session ? { session } : undefined as any);
 
         // Broadcast file upload event to room
         this.socket.to(roomId).emit('files:uploaded', {
@@ -104,8 +138,6 @@ export class FileOperationsHandler {
         success: false,
         error: error instanceof Error ? error.message : 'Upload failed'
       };
-    } finally {
-      await session.endSession();
     }
   }
 
@@ -114,12 +146,11 @@ export class FileOperationsHandler {
    * Prevents circular dependencies and validates permissions
    */
   async moveItem(itemId: string, targetFolderId: string | null, roomId: string): Promise<FileOperationResult> {
-    const session = await mongoose.startSession();
-
     try {
-      return await session.withTransaction(async () => {
+      return await this.withTransactionFallback(async (session) => {
         // Verify room access
-        const room = await Room.findById(roomId).session(session);
+        const q = Room.findOne({ id: roomId });
+        const room = session ? await q.session(session) : await q;
         if (!room) {
           throw new Error('Room not found');
         }
@@ -152,7 +183,7 @@ export class FileOperationsHandler {
   item.parentId = targetFolderId ? new mongoose.Types.ObjectId(targetFolderId) : null;
   item.lastModified = new Date();
 
-        await room.save({ session });
+        await room.save(session ? { session } : undefined as any);
 
         // If moving a folder, update all descendant paths
         if (item.type === 'folder') {
@@ -175,8 +206,6 @@ export class FileOperationsHandler {
         success: false,
         error: error instanceof Error ? error.message : 'Move failed'
       };
-    } finally {
-      await session.endSession();
     }
   }
 
@@ -185,12 +214,11 @@ export class FileOperationsHandler {
    * Recursively deletes folder contents
    */
   async deleteItem(itemId: string, roomId: string): Promise<FileOperationResult> {
-    const session = await mongoose.startSession();
-
     try {
-      return await session.withTransaction(async () => {
+      return await this.withTransactionFallback(async (session) => {
         // Verify room access
-        const room = await Room.findById(roomId).session(session);
+        const q = Room.findOne({ id: roomId });
+        const room = session ? await q.session(session) : await q;
         if (!room) {
           throw new Error('Room not found');
         }
@@ -208,7 +236,7 @@ export class FileOperationsHandler {
 
         // Remove the item from the files array
   room.files = room.files.filter((f: FileInfo) => f.fileId?.toString() !== itemId);
-        await room.save({ session });
+        await room.save(session ? { session } : undefined as any);
 
         // Broadcast delete event
         this.socket.to(roomId).emit('files:deleted', {
@@ -224,8 +252,6 @@ export class FileOperationsHandler {
         success: false,
         error: error instanceof Error ? error.message : 'Delete failed'
       };
-    } finally {
-      await session.endSession();
     }
   }
 
@@ -233,12 +259,11 @@ export class FileOperationsHandler {
    * Create new file/folder with ACID compliance
    */
   async createItem(name: string, type: 'file' | 'folder', roomId: string, parentId?: string): Promise<FileOperationResult> {
-    const session = await mongoose.startSession();
-
     try {
-      return await session.withTransaction(async () => {
+      return await this.withTransactionFallback(async (session) => {
         // Verify room access
-        const room = await Room.findById(roomId).session(session);
+        const q = Room.findOne({ id: roomId });
+        const room = session ? await q.session(session) : await q;
         if (!room) {
           throw new Error('Room not found');
         }
@@ -277,7 +302,7 @@ export class FileOperationsHandler {
 
 
         room.files.push(newItem as FileInfo);
-        await room.save({ session });
+        await room.save(session ? { session } : undefined as any);
 
         // Broadcast create event
         this.socket.to(roomId).emit('files:created', {
@@ -293,8 +318,6 @@ export class FileOperationsHandler {
         success: false,
         error: error instanceof Error ? error.message : 'Create failed'
       };
-    } finally {
-      await session.endSession();
     }
   }
 
@@ -305,7 +328,7 @@ export class FileOperationsHandler {
     sourceFolderId: string,
     targetFolderId: string,
     room: any,
-    session: ClientSession
+    session: ClientSession | null
   ): Promise<boolean> {
   const targetFolder = room.files.find((f: FileInfo) => f.fileId?.toString() === targetFolderId);
 
@@ -322,7 +345,7 @@ export class FileOperationsHandler {
   private async updateDescendantPaths(
     folderId: string,
     room: any,
-    session: ClientSession
+    session: ClientSession | null
   ): Promise<void> {
     const descendants = room.files.filter((file: FileInfo) =>
       file.parentId?.toString() === folderId
@@ -337,7 +360,7 @@ export class FileOperationsHandler {
       }
     }
 
-    await room.save({ session });
+    await room.save(session ? { session } : undefined as any);
   }
 
   /**
@@ -346,7 +369,7 @@ export class FileOperationsHandler {
   private async deleteDescendants(
     folderId: string,
     room: any,
-    session: ClientSession
+    session: ClientSession | null
   ): Promise<void> {
     const descendants = room.files.filter((file: FileInfo) =>
       file.parentId?.toString() === folderId

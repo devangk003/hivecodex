@@ -143,61 +143,18 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   const [participants, setParticipants] = useState<RoomParticipant[]>(initialParticipants);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const socket = useSocket();
+  const { isConnected } = useSocket();
 
-  // Real-time participant updates via socket
+  // Use participants from props (managed by UserStatusContext via socket events)
+  // No more redundant API calls - all updates come from parent component
   useEffect(() => {
-    if (!socket || !roomId) return;
-    socket.emit('joinRoom', { roomId, userId: user?.id, userName: user?.name });
-    const handleUsersUpdate = (updatedUsers: any[]) => {
-      // Map backend fields to frontend expected fields, ensure profilePicId is a string
-      const mapped = updatedUsers.map(u => ({
-        id: u.id || u.userId,
-        name: u.name || u.userName,
-        profilePicId: u.profilePicId,
-        status: u.status,
-        isOnline: u.isOnline !== undefined ? u.isOnline : (u.status === 'online' || u.status === 'in-room'),
-        currentRoomId: u.currentRoomId,
-      }));
-      // Deduplicate by id
-      const unique = Array.from(new Map(mapped.map(u => [u.id, u])).values());
-      setParticipants(unique);
-      if (socket) {
-        console.log('Socket connected:', socket.getConnectionStatus().isConnected);
-      }
-      console.log(unique);
-    };
+    setParticipants(initialParticipants);
+  }, [initialParticipants]);
 
-    // Refetch participants from backend (DB) for up-to-date status
-    const fetchParticipantsFromDB = async () => {
-      try {
-        // Get JWT token from localStorage or your auth context
-        const token = localStorage.getItem('token');
-        const res = await fetch(`/api/v1/rooms/${roomId}/users`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const users = await res.json();
-        // If backend returns { success, data }, use users.data; else fallback to users
-        const arr = Array.isArray(users) ? users : users.data;
-        if (!Array.isArray(arr)) throw new Error('Participants response is not an array');
-        handleUsersUpdate(arr);
-      } catch (e) {
-        console.warn('Failed to fetch participants from DB:', e);
-      }
-    };
-
-    socket.on('roomParticipants', handleUsersUpdate);
-    socket.on('statusChange', fetchParticipantsFromDB);
-
-    return () => {
-      socket.off('roomParticipants', handleUsersUpdate);
-      socket.off('statusChange', fetchParticipantsFromDB);
-      socket.emit('leave-room', { roomId });
-    };
-  }, [socket, roomId, user?.id, user?.name]);
+  // Optional: Log socket connection status for debugging (only when it changes)
+  useEffect(() => {
+    console.log('ActivityPanel: Socket connected:', isConnected);
+  }, [isConnected]);
 
   // Generate room invite link
   const roomInviteLink = `${window.location.origin}/room/${roomId}`;

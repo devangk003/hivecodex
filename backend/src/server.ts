@@ -38,6 +38,7 @@ import { initializeSocketHandlers } from "./socket/socketServer";
 import { setGridFSBucket, authRoutes } from "./routes/auth";
 import aiRoutes from "./routes/ai";
 import roomRoutes from "./routes/roomRoutes";
+import fileRoutes from "./routes/fileRoutes";
 import { User, Room, Message, FileMeta } from "./database/models";
 import { JWT_SECRET, MONGO_URI, PORT, SECURITY_CONFIG } from "./config/constants";
 
@@ -62,6 +63,8 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
   res.setHeader('X-Correlation-Id', correlationId);
   next();
 });
+
+ 
 
 // Rate limiting configuration
 const createRateLimiter = (windowMs: number, max: number, message: string) => {
@@ -458,6 +461,7 @@ const upload = multer();
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/ai", aiRoutes);
 app.use("/api/v1/rooms", roomRoutes);
+app.use("/api/v1/rooms", fileRoutes);
 
 // Authentication middleware
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
@@ -489,6 +493,107 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
 };
 
 // Essential API endpoints that frontend needs
+
+// ==================== FILE CONTENT ENDPOINTS ====================
+// Return raw file content by fileId (used by frontend fileAPI.getFileContent)
+app.get("/api/v1/files/:fileId/content", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { fileId } = req.params;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+      return res.status(400).json({ message: "Invalid fileId" });
+    }
+
+    // Find the room containing this file
+    const room = await Room.findOne({ 'files.fileId': new mongoose.Types.ObjectId(fileId) }).lean();
+    if (!room) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    // Ensure requester is room owner or participant
+    const userId = (req as any).user?.id;
+    const isOwner = room.userId?.toString() === userId?.toString();
+    const isParticipant = Array.isArray(room.participantList) && room.participantList.some((p: any) => p?.userId?.toString() === userId?.toString());
+    if (!isOwner && !isParticipant) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const file = (room.files as any[]).find(f => f.fileId?.toString() === fileId);
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+    if (file.type !== 'file') {
+      return res.status(400).json({ message: "Requested item is not a file" });
+    }
+
+    // Respond with plain shape expected by frontend: { content }
+    return res.json({ content: file.content || "" });
+  } catch (err: any) {
+    console.error("File content fetch error:", err);
+    return res.status(500).json({ message: err.message || "Failed to fetch file content" });
+  }
+});
+
+// Save file content by fileId (used by frontend FileEditingContext.saveFile)
+app.put("/api/v1/files/:fileId/content", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+  try {
+    await dbConnectionPromise;
+    const { fileId } = req.params;
+    const { content } = req.body;
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+      return res.status(400).json({ message: "Invalid fileId" });
+    }
+
+    if (typeof content !== 'string') {
+      return res.status(400).json({ message: "Content must be a string" });
+    }
+
+    // Find the room containing this file
+    const room = await Room.findOne({ 'files.fileId': new mongoose.Types.ObjectId(fileId) });
+    if (!room) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    // Ensure requester is room owner or participant
+    const userId = (req as any).user?.id;
+    const isOwner = room.userId?.toString() === userId?.toString();
+    const isParticipant = Array.isArray(room.participantList) && room.participantList.some((p: any) => p?.userId?.toString() === userId?.toString());
+    if (!isOwner && !isParticipant) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const fileIndex = room.files.findIndex((f: any) => f.fileId?.toString() === fileId);
+    if (fileIndex === -1) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    const file = room.files[fileIndex] as any;
+    if (file.type !== 'file') {
+      return res.status(400).json({ message: "Cannot save content to a folder" });
+    }
+
+    // Update file content and metadata
+    file.content = content;
+    file.lastModifiedBy = userId;
+    file.lastModified = new Date();
+
+    await room.save();
+
+    return res.json({ 
+      success: true, 
+      message: "File saved successfully",
+      fileId,
+      lastModified: file.lastModified
+    });
+  } catch (err: any) {
+    console.error("File save error:", err);
+    return res.status(500).json({ message: err.message || "Failed to save file content" });
+  }
+});
 
 // Health check endpoints
 app.get("/health", (req: express.Request, res: express.Response) => {

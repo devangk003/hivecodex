@@ -6,6 +6,7 @@ import {
   Folder, 
   FolderOpen,
   Plus,
+  FolderPlus,
   MoreHorizontal,
   RefreshCw,
   FileText,
@@ -413,25 +414,23 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     if (!isCreating || !newItemName.trim()) return;
 
     try {
-      // Call backend creation API
-      // if (isCreating.type === 'file') {
-      //   const created = await fileAPI.createFile(
-      //     roomId,
-      //     newItemName.trim(),
-      //     isCreating.parentId === 'root' ? null : isCreating.parentId
-      //   );
-      //   await loadFiles();
-      //   toast.success('File created successfully');
-      // } else {
-      //   const created = await fileAPI.createFolder(
-      //     roomId,
-      //     newItemName.trim(),
-      //     isCreating.parentId === 'root' ? null : isCreating.parentId
-      //   );
-      //   await loadFiles();
-      //   toast.success('Folder created successfully');
-      // }
-      toast.info(`${isCreating.type} creation is not implemented yet.`);
+      if (isCreating.type === 'file') {
+        await fileAPI.createFile(
+          roomId,
+          newItemName.trim(),
+          isCreating.parentId === 'root' ? null : isCreating.parentId
+        );
+        await loadFiles();
+        toast.success('File created successfully');
+      } else {
+        await fileAPI.createFolder(
+          roomId,
+          newItemName.trim(),
+          isCreating.parentId === 'root' ? null : isCreating.parentId
+        );
+        await loadFiles();
+        toast.success('Folder created successfully');
+      }
     } catch (error) {
       console.error('Failed to create item:', error);
       toast.error(`Failed to create ${isCreating.type}`);
@@ -450,20 +449,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     if (!confirm(`Are you sure you want to delete "${item.name}"?`)) return;
 
     try {
-      // TODO: Implement actual delete API call
-      toast.info('Deletion is not implemented yet.');
-      // const removeFromTree = (tree: FileTreeItem[], targetId: string): FileTreeItem[] => {
-      //   return tree.filter(treeItem => {
-      //     if (treeItem.id === targetId) return false;
-      //     if (treeItem.children) {
-      //       treeItem.children = removeFromTree(treeItem.children, targetId);
-      //     }
-      //     return true;
-      //   });
-      // };
-
-      // setFileTree(prev => removeFromTree(prev, item.id));
-      // toast.success(`${item.type === 'file' ? 'File' : 'Folder'} deleted successfully`);
+      await fileAPI.deleteFile(roomId, item.id);
+      await loadFiles();
+      toast.success(`${item.type === 'file' ? 'File' : 'Folder'} deleted successfully`);
     } catch (error) {
       console.error('Failed to delete item:', error);
       toast.error(`Failed to delete ${item.type}`);
@@ -474,11 +462,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     if (newName === item.name) return;
 
     try {
-      // TODO: Implement actual rename API call
-      toast.info('Rename is not implemented yet.');
-      // await fileAPI.renameFile(roomId, item.id, newName);
-      // await loadFiles();
-      // toast.success('Item renamed successfully');
+      await fileAPI.renameFile(roomId, item.id, newName);
+      await loadFiles();
+      toast.success('Item renamed successfully');
     } catch (error) {
       console.error('Failed to rename item:', error);
       toast.error('Failed to rename item');
@@ -499,9 +485,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         if (targetFolderId) {
           formData.append('parentId', targetFolderId);
         }
-        // TODO: Replace with actual file upload API call
-        // return fileAPI.uploadFile(roomId, formData);
-        return Promise.resolve();
+        return fileAPI.uploadFile(roomId, formData);
       });
       
       await Promise.all(uploadPromises);
@@ -555,8 +539,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     }
 
     try {
-      // TODO: Implement actual move API call with ACID compliance
-      // await fileAPI.moveItem(roomId, draggedItem.id, targetFolderId);
+      await fileAPI.moveFileOrFolder(roomId, draggedItem.id, targetFolderId);
       await loadFiles();
       toast.success(`Moved ${draggedItem.name} successfully`);
     } catch (error) {
@@ -640,6 +623,18 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
           >
             <Plus className="h-3.5 w-3.5" />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCreateFile('root', 'folder');
+            }}
+            title="New Folder"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+          </Button>
         </div>
       </div>
       <div 
@@ -683,9 +678,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
         )}
         
         {isCreating && (
-          <div className="flex items-center px-2 py-1" style={{ paddingLeft: '16px' }}>
-            <div className="w-4 h-4 mr-2"></div>
-            <input
+          <div className="flex items-center px-2 py-1 bg-discord-sidebar-hover border border-discord-border rounded mx-2 mb-2" style={{ paddingLeft: '16px' }}>
+            {isCreating.type === 'file' ? (
+              <File className="w-4 h-4 mr-2 text-discord-text" />
+            ) : (
+              <Folder className="w-4 h-4 mr-2 text-discord-text" />
+            )}
+            <Input
               ref={inputRef}
               type="text"
               value={newItemName}
@@ -695,7 +694,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
                 if (e.key === 'Enter') handleCreateConfirm();
                 else if (e.key === 'Escape') handleCreateCancel();
               }}
-              className="flex-1 bg-discord-input text-sm text-white border-none focus:ring-1 focus:ring-discord-primary p-0 h-5"
+              className="flex-1 bg-discord-sidebar text-sm text-white border-discord-border focus:ring-1 focus:ring-discord-primary h-6"
+              placeholder={isCreating.type === 'file' ? 'Enter file name...' : 'Enter folder name...'}
               autoFocus
             />
           </div>
