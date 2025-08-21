@@ -39,9 +39,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { aiService } from '@/services/aiService';
-import { getLanguageFromExtension, formatFileSize } from '@/utils';
+import { formatFileSize } from '@/utils';
+import { toast } from 'sonner';
 
-// --- INTERFACES (UNCHANGED) ---
+// --- INTERFACES ---
 interface FileAttachment {
   id: string;
   name: string;
@@ -99,7 +100,7 @@ interface AIAssistantProps {
 }
 
 
-// --- SUB-COMPONENTS (LARGELY UNCHANGED) ---
+// --- SUB-COMPONENTS ---
 const MessageTypeIndicator: React.FC<{
   type?: string;
   model?: string;
@@ -338,7 +339,6 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   activeFileContent,
   activeFileLanguage,
   cursorPosition,
-  theme = 'dark',
   workspaceFiles = [],
   onAttachWorkspaceFile,
 }) => {
@@ -346,9 +346,10 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
-  const [isAIOnline, setIsAIOnline] = useState(true);
+  const [isAIOnline] = useState(true);
   const [selectedModel, setSelectedModel] = useState('Gemini 2.5 Pro');
   const [showFilePicker, setShowFilePicker] = useState(false);
+  const [participants, setParticipants] = useState<any[]>([]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -357,7 +358,23 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // --- LOGIC (UNCHANGED) ---
+  // Sync selected model with backend configuration
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await aiService.getModels();
+        const current = (res as any)?.data?.currentModel;
+        if (current && typeof current === 'string') {
+          setSelectedModel(current);
+        }
+      } catch (e) {
+        // keep default if backend not reachable
+        console.warn('Failed to fetch models; using default label');
+      }
+    })();
+  }, []);
+
+  // --- LOGIC ---
   const addFileAttachment = (fileName: string, content: string, language?: string) => {
     const newAttachment: FileAttachment = {
       id: Date.now().toString(),
@@ -384,7 +401,20 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
     if (workspaceFiles.length > 0) {
       setShowFilePicker(true);
     } else {
-      console.log('No workspace files available');
+      toast.custom((id) => (
+        <div className="flex items-center gap-3 px-3 py-2 bg-zinc-900 text-zinc-100 border border-zinc-800 rounded-md shadow-lg">
+          <FileText className="h-4 w-4 text-blue-400" />
+          <span className="text-sm">Open a file to attach</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => toast.dismiss(id)}
+            className="ml-2 h-6 w-6 p-0 text-zinc-400 hover:text-zinc-100"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      ), { duration: 4000 });
     }
   };
 
@@ -513,6 +543,22 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
     await navigator.clipboard.writeText(code);
   };
 
+  const handleUsersUpdate = (updatedUsers: any[]) => {
+    // Map backend fields to frontend expected fields
+    const mapped = updatedUsers.map(u => ({
+      id: u.id || u.userId,
+      name: u.name || u.userName,
+      profilePicId: u.profilePicId,
+      status: u.status,
+      isOnline: u.isOnline !== undefined ? u.isOnline : u.status === 'online' || u.status === 'in-room',
+      currentRoomId: u.currentRoomId,
+    }));
+    // Deduplicate by id
+    const unique = Array.from(new Map(mapped.map(u => [u.id, u])).values());
+    setParticipants(unique);
+    console.log(unique);
+  };
+
 
   return (
     <TooltipProvider>
@@ -534,19 +580,24 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
         </div>
 
         {/* --- MESSAGES OR WELCOME SCREEN --- */}
-        <div className="flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
+  <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-ai-scrollbar">
+          {messages.length === 0 && !isLoading ? (
             <HiveAIWelcomeScreen />
           ) : (
-            <div className="p-4 space-y-4">
+            <>
               {messages.map((msg) => (
-                <div key={msg.id} className="space-y-4">
-                  <div className={cn('flex items-start gap-4 group', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-                    {/* AVATAR REMOVED FROM HERE */}
-                    <div className={cn('max-w-[85%] rounded-lg shadow-sm p-4', msg.role === 'user' ? 'bg-blue-600/80 text-white' : 'bg-zinc-800/80 text-zinc-100')}>
+                <div key={msg.id} className="space-y-2.5">
+                  <div className={cn('flex items-start gap-2.5 group', msg.role === 'user' ? 'justify-end' : '')}>
+                    {msg.role === 'assistant' && (
+                        <Avatar className="h-8 w-8 border border-zinc-700 bg-zinc-800 shrink-0">
+                           <AvatarFallback className="bg-zinc-700 text-zinc-300">
+                               <Brain className="h-4 w-4" />
+                           </AvatarFallback>
+                        </Avatar>
+                    )}
+                    <div className={cn('max-w-[72ch] sm:max-w-[80%] rounded-lg shadow-sm p-3', msg.role === 'user' ? 'bg-blue-600/80 text-white' : 'bg-zinc-800/80 text-zinc-100')}>
                       {msg.role === 'assistant' && <MessageTypeIndicator type={msg.type} model={msg.model} tokens={msg.tokens} />}
-                      {/* TEXT SIZE DECREASED HERE */}
-                      <div className="prose prose-invert prose-xs max-w-none">
+                      <div className="prose prose-invert prose-sm max-w-none">
                         <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
                           code: (props: any) => {
                             const { children, className, inline } = props;
@@ -561,13 +612,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                         </ReactMarkdown>
                       </div>
                     </div>
-                    {msg.role === 'user' && (
-                      <Avatar className="h-8 w-8 border border-zinc-700 bg-zinc-800 shrink-0">
-                        <AvatarFallback className="bg-zinc-700 text-zinc-300">
-                          <User className="h-4 w-4" />
-                        </AvatarFallback>
-                      </Avatar>
-                    )}
+                    {/* User avatar removed for a cleaner, less cluttered layout */}
                   </div>
 
                   {msg.role === 'assistant' && msg.suggestions && msg.suggestions.length > 0 && (
@@ -584,7 +629,12 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                 </div>
               ))}
                 {isLoading && (
-                    <div className="flex items-start gap-4 justify-start">
+                    <div className="flex items-start gap-4">
+                         <Avatar className="h-8 w-8 border border-zinc-700 bg-zinc-800 shrink-0">
+                           <AvatarFallback className="bg-zinc-700 text-zinc-300">
+                               <Brain className="h-4 w-4" />
+                           </AvatarFallback>
+                        </Avatar>
                         <div className="bg-zinc-800/80 p-4 rounded-lg flex items-center gap-3">
                             <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
                             <span className="text-sm text-zinc-300">Thinking...</span>
@@ -592,7 +642,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                     </div>
                 )}
               <div ref={messagesEndRef} />
-            </div>
+            </>
           )}
         </div>
 
@@ -603,19 +653,18 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
               {attachments.map((attachment) => (
                 <div
                   key={attachment.id}
-                  className="flex items-center gap-2 bg-zinc-800/70 rounded-lg px-3 py-2 text-xs"
+                  className="flex items-center gap-2 bg-zinc-800/70 rounded-md px-2 py-1 h-7 w-auto flex-none"
                 >
-                  <FileText className="h-3 w-3 text-blue-400" />
-                  <span className="text-zinc-300">{attachment.name}</span>
-                  <span className="text-zinc-500">({formatFileSize(attachment.size)})</span>
-                  <Badge variant="outline" className="text-xs bg-zinc-700/50 text-zinc-400 border-zinc-600">
-                    {attachment.language}
-                  </Badge>
+                  <span className="text-[11px] text-zinc-300 truncate max-w-[7rem]">
+                    {attachment.name}
+                  </span>
                   <Button
+                    aria-label="Remove attachment"
+                    title="Remove"
                     variant="ghost"
                     size="sm"
                     onClick={() => removeAttachment(attachment.id)}
-                    className="h-5 w-5 p-0 text-zinc-500 hover:text-zinc-300"
+                    className="h-5 w-5 p-0 text-zinc-500 hover:text-zinc-300 shrink-0"
                   >
                     <X className="h-3 w-3" />
                   </Button>
@@ -625,10 +674,9 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
           </div>
         )}
 
-        {/* --- REDESIGNED INPUT AREA WITH PROPER ALIGNMENT --- */}
+        {/* --- INPUT AREA: textarea with controls below --- */}
         <div className="p-3 border-t border-zinc-800 bg-zinc-950">
-          <div className="relative">
-            {/* Text Input - Full Width Container */}
+          <form onSubmit={handleSendMessage} className="space-y-2">
             <Textarea
               ref={inputRef}
               placeholder="Provide instructions..."
@@ -641,20 +689,19 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                 }
               }}
               disabled={isLoading || !isAIOnline}
-              className="w-full bg-zinc-900 border-zinc-700/50 rounded-lg text-zinc-100 placeholder:text-zinc-500 resize-none min-h-[50px] max-h-[200px] pr-32"
+              className="w-full bg-zinc-900 border-zinc-700/50 rounded-lg text-zinc-100 placeholder:text-zinc-500 resize-none text-sm"
               rows={1}
             />
-            
-            {/* Controls positioned inside the text box */}
-            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-2">
-              {/* File Attachment Button */}
+
+            <div className="flex items-center gap-2 flex-wrap">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
                     onClick={triggerFileAttachment}
-                    className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
+                    className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
                     disabled={isLoading || !isAIOnline}
                   >
                     <Paperclip className="h-4 w-4" />
@@ -663,13 +710,13 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                 <TooltipContent>Attach workspace files</TooltipContent>
               </Tooltip>
 
-              {/* Model Selection */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
+                    type="button"
                     variant="ghost" 
                     size="sm" 
-                    className="h-8 px-2 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 border border-zinc-700/50"
+                    className="h-7 px-2 text-[11px] text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 border border-zinc-700/50"
                     disabled={isLoading || !isAIOnline}
                   >
                     <Brain className="h-3 w-3 mr-1" />
@@ -686,27 +733,25 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* Send Button */}
               <Button
                 type="submit"
-                onClick={handleSendMessage}
                 disabled={!input.trim() || isLoading || !isAIOnline}
-                className="h-8 w-8 p-0 hover:bg-blue-700 disabled:opacity-50 bg-blue-600 hover:bg-blue-700"
+                className="ml-auto h-7 w-7 p-0 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </div>
-          </div>
+          </form>
         </div>
 
-        {/* File Picker Modal */}
+        {/* --- FILE PICKER MODAL --- */}
         {showFilePicker && (
           <div 
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
             onClick={() => setShowFilePicker(false)}
           >
             <div 
-              className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-h-96 overflow-hidden"
+              className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-h-96 overflow-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
@@ -721,7 +766,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
                 </Button>
               </div>
               
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="space-y-2">
                 {workspaceFiles.length > 0 ? (
                   workspaceFiles.map((file) => (
                     <div
@@ -751,10 +796,11 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
             </div>
           </div>
         )}
-
       </div>
     </TooltipProvider>
   );
 };
 
 export default AIAssistant;
+// Sleek custom scrollbar styles for AIAssistant
+import '@/components/AIAssistant/aiAssistantScrollbar.css';

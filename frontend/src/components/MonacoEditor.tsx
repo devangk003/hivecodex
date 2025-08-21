@@ -100,11 +100,6 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
     const loadFile = async () => {
       if (!selectedFile) return;
 
-      // Only process new selections
-      if (lastProcessedSelectedFileId.current === selectedFile.fileId) {
-        return;
-      }
-
       // If already active on this file, do nothing
       if (activeTab && activeTab.fileId === selectedFile.fileId) {
         lastProcessedSelectedFileId.current = selectedFile.fileId;
@@ -121,7 +116,7 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
 
       setIsLoading(true);
       try {
-        const fileData = await fileAPI.getFileContent(selectedFile.fileId);
+        const fileData = await fileAPI.getFileContent(roomId, selectedFile.fileId);
         const language = getEditorLanguage(selectedFile.extension || '');
 
         if (isCancelled) return;

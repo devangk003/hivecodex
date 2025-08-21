@@ -1542,7 +1542,7 @@ app.post(
   },
 );
 
-app.get("/api/profile", authenticateToken, async (req, res) => {
+app.get("/api/v1/profile", authenticateToken, async (req, res) => {
   try {
     await dbConnectionPromise;
     const user = await User.findById(req.user.id).select(
@@ -1560,7 +1560,7 @@ app.get("/api/profile", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/files/:fileId", async (req, res) => {
+app.get("/api/v1/files/:fileId", async (req, res) => {
   try {
     await dbConnectionPromise;
     const { fileId } = req.params;

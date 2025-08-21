@@ -101,8 +101,49 @@ const RoomContent = () => {
   const [roomData, setRoomData] = useState<RoomType | null>(null);
   const [isLoadingRoom, setIsLoadingRoom] = useState(true);
 
-  // Build room participants from room data list, merging live status from context
-  const roomParticipants: RoomParticipant[] = Array.from(participants.values())
+
+  // --- Real-time DB participant list for accurate counters ---
+  const [dbParticipants, setDbParticipants] = useState<RoomParticipant[]>([]);
+  const fetchDbParticipants = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      const list = await roomAPI.getRoomParticipants(roomId);
+      if (Array.isArray(list)) {
+        setDbParticipants(list.map((p: any) => ({
+          id: p.id || p.userId,
+          name: p.name || p.userName || 'Unknown',
+          profilePicId: p.profilePicId,
+          status: p.status,
+          isOnline: p.status === 'in-room' || p.status === 'online',
+          lastSeen: p.lastSeen,
+          currentRoomId: p.currentRoomId,
+        })));
+      }
+    } catch (e) {
+      console.warn('Failed to fetch participants from DB:', e);
+    }
+  }, [roomId]);
+
+  // Listen for socket events to refresh participants from DB
+  useEffect(() => {
+    if (!roomId) return;
+    const handleUpdate = () => fetchDbParticipants();
+    if (socketService && socketService.socket) {
+      socketService.socket.on('roomParticipants', handleUpdate);
+      socketService.socket.on('statusChange', handleUpdate);
+    }
+    // Initial fetch
+    fetchDbParticipants();
+    return () => {
+      if (socketService && socketService.socket) {
+        socketService.socket.off('roomParticipants', handleUpdate);
+        socketService.socket.off('statusChange', handleUpdate);
+      }
+    };
+  }, [roomId, fetchDbParticipants]);
+
+  // Fallback: use context participants if dbParticipants is empty
+  const roomParticipants: RoomParticipant[] = dbParticipants.length > 0 ? dbParticipants : Array.from(participants.values())
     .filter(p => !!p && !!p.userId)
     .map(p => ({
       id: p.userId,
@@ -139,6 +180,38 @@ const RoomContent = () => {
 
     fetchRoomData();
   }, [roomId]);
+
+  // Fallback: fetch participants via REST to seed context so ActivityPanel shows everyone
+  useEffect(() => {
+    if (!roomId) return;
+    let cancelled = false;
+
+    const seedParticipantsFromApi = async () => {
+      try {
+        const list = await roomAPI.getRoomParticipants(roomId);
+        if (cancelled || !Array.isArray(list)) return;
+        (list as APIParticipant[]).forEach(p => {
+          const isOnline = !!p.online;
+          updateParticipantStatus({
+            userId: p.id,
+            userName: p.name,
+            profilePicId: p.profilePicId,
+            globalStatus: isOnline ? 'online' : 'offline',
+            roomStatus: isOnline ? 'in-room' as const : 'offline',
+            currentRoomId: isOnline ? roomId : undefined,
+            lastSeen: !isOnline ? new Date() : undefined,
+            isInSameRoom: isOnline,
+          });
+        });
+      } catch (e) {
+        console.warn('Failed to seed participants from API', e);
+      }
+    };
+
+    seedParticipantsFromApi();
+    const t = setInterval(seedParticipantsFromApi, 10000); // light poll to keep fresh if sockets fail
+    return () => { cancelled = true; clearInterval(t); };
+  }, [roomId]); // Removed updateParticipantStatus from deps since it's now memoized
 
   // Initialize room and socket connection
   useEffect(() => {
@@ -267,7 +340,7 @@ const RoomContent = () => {
     } else {
       // File is not open, create a new tab and load content
       try {
-        const fileContent = await fileAPI.getFileContent(file.fileId);
+        const fileContent = await fileAPI.getFileContent(roomId!, file.fileId);
         
         const newTab: FileTab = {
           fileId: file.fileId,
@@ -345,23 +418,24 @@ const RoomContent = () => {
     });
   }, [openTabs]);
 
-  const { onlineCount, awayCount, offlineCount } = (() => {
+  // Accurate participant status counters
+  function getParticipantStatusCounts(participants: RoomParticipant[]) {
     let online = 0, away = 0, offline = 0;
-    for (const p of roomParticipants) {
-      if (p.isOnline) {
-        if (p.status === 'away') away++; else if (p.status === 'in-room') online++; else online++;
+    const seen = new Set();
+    for (const p of participants) {
+      if (!p || !p.id || seen.has(p.id)) continue;
+      seen.add(p.id);
+      if (p.status === 'in-room' || p.status === 'online') {
+        online++;
+      } else if (p.status === 'away') {
+        away++;
       } else {
         offline++;
       }
     }
-    
-    // Include current user in online count if they're in the room
-    if (currentRoomId === roomId) {
-      online++;
-    }
-    
     return { onlineCount: online, awayCount: away, offlineCount: offline };
-  })();
+  }
+  const { onlineCount, awayCount, offlineCount } = getParticipantStatusCounts(roomParticipants);
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
@@ -433,98 +507,109 @@ const RoomContent = () => {
       {/* Room Content */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
         <PanelGroup direction="horizontal" className="h-full">
-          {/* Activity Bar & Left Panel */}
-          <div className="flex">
-            <ActivityBar
-              activePanel={activeView as any}
-              onPanelChange={(panel) => {
-                setActiveView(panel);
-                if (!isExplorerOpen) setIsExplorerOpen(true);
-              }}
-              roomId={roomId || ''}
-            />
-            
-            {/* Left Panel - Conditionally show based on explorer state */}
-            {isExplorerOpen && (
-              <div className="w-80 bg-discord-sidebar border-r border-discord-border">
-                {activeView === 'explorer' && (
-                  <FileExplorer
-                    roomId={roomId || ''}
-                    onFileSelect={(file) => handleFileSelect(file)}
-                    selectedFileId={selectedFile?.id}
-                  />
-                )}
-                {activeView === 'search' && (
-                  <SearchPanel
-                    roomId={roomId || ''}
-                    onResultSelect={(result) => {
-                      // Handle search result selection
-                      handleFileSelect({
-                        id: result.fileId,
-                        name: result.fileName,
-                        type: 'file',
-                        path: result.filePath,
-                        content: '',
-                        language: 'text'
-                      });
-                    }}
-                  />
-                )}
-                {activeView === 'sourceControl' && (
-                  <SourceControlPanel
-                    roomId={roomId || ''}
-                    onFileSelect={(filePath) => {
-                      // Handle source control file selection
-                      handleFileSelect({
-                        id: filePath,
-                        name: filePath.split('/').pop() || '',
-                        type: 'file',
-                        path: filePath,
-                        content: '',
-                        language: 'text'
-                      });
-                    }}
-                  />
-                )}
-                {activeView === 'run' && (
-                  <RunPanel
-                    roomId={roomId || ''}
-                    currentFile={selectedFile ? {
-                      name: selectedFile.name,
-                      content: selectedFile.content,
-                      language: selectedFile.language
-                    } : undefined}
-                  />
-                )}
-                {activeView === 'users' && (
-                  <UsersPanel
-                    roomId={roomId || ''}
-                    currentUserId={user?.id || ''}
-                    onUserSelect={(user) => {
-                      // Handle user selection
-                      console.log('Selected user:', user);
-                    }}
-                    onInviteUser={() => {
-                      // Handle invite user
-                      console.log('Invite user clicked');
-                    }}
-                  />
-                )}
-                {activeView === 'settings' && (
-                  <SettingsPanel
-                    roomId={roomId || ''}
-                    onClose={() => setIsExplorerOpen(false)}
-                  />
-                )}
-              </div>
-            )}
-          </div>
+          {/* Left Region: ActivityBar + Resizable Left Panel */}
+          <Panel
+            id="left-panel"
+            order={1}
+            defaultSize={20}
+            minSize={12}
+            maxSize={35}
+            className="bg-discord-sidebar border-r border-discord-border"
+          >
+            <div className="h-full flex">
+              <ActivityBar
+                activePanel={activeView as any}
+                onPanelChange={(panel) => {
+                  setActiveView(panel);
+                  if (!isExplorerOpen) setIsExplorerOpen(true);
+                }}
+                roomId={roomId || ''}
+              />
+
+              {isExplorerOpen && (
+                <div className="flex-1 min-w-0">
+                  {activeView === 'explorer' && (
+                    <FileExplorer
+                      roomId={roomId || ''}
+                      onFileSelect={(file) => handleFileSelect(file)}
+                      selectedFileId={selectedFile?.id}
+                    />
+                  )}
+                  {activeView === 'search' && (
+                    <SearchPanel
+                      roomId={roomId || ''}
+                      onResultSelect={(result) => {
+                        // Handle search result selection
+                        handleFileSelect({
+                          id: result.fileId,
+                          name: result.fileName,
+                          type: 'file',
+                          path: result.filePath,
+                          content: '',
+                          language: 'text'
+                        });
+                      }}
+                    />
+                  )}
+                  {activeView === 'sourceControl' && (
+                    <SourceControlPanel
+                      roomId={roomId || ''}
+                      onFileSelect={(filePath) => {
+                        // Handle source control file selection
+                        handleFileSelect({
+                          id: filePath,
+                          name: filePath.split('/').pop() || '',
+                          type: 'file',
+                          path: filePath,
+                          content: '',
+                          language: 'text'
+                        });
+                      }}
+                    />
+                  )}
+                  {activeView === 'run' && (
+                    <RunPanel
+                      roomId={roomId || ''}
+                      currentFile={selectedFile ? {
+                        name: selectedFile.name,
+                        content: selectedFile.content,
+                        language: selectedFile.language
+                      } : undefined}
+                    />
+                  )}
+                  {activeView === 'users' && (
+                    <UsersPanel
+                      roomId={roomId || ''}
+                      currentUserId={user?.id || ''}
+                      onUserSelect={(user) => {
+                        // Handle user selection
+                        console.log('Selected user:', user);
+                      }}
+                      onInviteUser={() => {
+                        // Handle invite user
+                        console.log('Invite user clicked');
+                      }}
+                    />
+                  )}
+                  {activeView === 'settings' && (
+                    <SettingsPanel
+                      roomId={roomId || ''}
+                      onClose={() => setIsExplorerOpen(false)}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          </Panel>
+
+          {/* Resize handle between left panel and editor */}
+          <PanelResizeHandle className="w-1 bg-discord-border hover:bg-discord-primary transition-colors duration-200" />
 
           {/* Main Editor */}
           <Panel
             id="editor-panel"
-            order={isExplorerOpen ? 3 : 2}
-            defaultSize={isExplorerOpen ? 60 : 80}
+            order={2}
+            defaultSize={isRightPanelOpen && !isRightPanelMinimized ? 60 : 80}
             minSize={30}
             className="bg-discord-primary"
           >
@@ -542,43 +627,30 @@ const RoomContent = () => {
             </div>
           </Panel>
 
-          {/* Right Panel - Chat & Activity */}
           {isRightPanelOpen && !isRightPanelMinimized && (
             <>
               <PanelResizeHandle className="w-1 bg-discord-border hover:bg-discord-primary transition-colors duration-200" />
               <Panel
                 id="right-panel"
-                order={isExplorerOpen ? 4 : 3}
+                order={3}
                 defaultSize={20}
                 minSize={15}
                 maxSize={35}
                 className="bg-discord-secondary border-l border-discord-border border-animated"
               >
                 <div className="h-full flex flex-col">
-                  <Tabs
-                    defaultValue="activity"
-                    className="h-full flex flex-col"
-                  >
+                  <Tabs defaultValue="activity" className="h-full flex flex-col">
                     <div className="flex items-center justify-between p-2 border-b border-discord-border">
                       <TabsList className="grid w-full grid-cols-3 bg-transparent h-8">
-                        <TabsTrigger
-                          value="activity"
-                          className="text-xs data-[state=active]:bg-discord-primary"
-                        >
+                        <TabsTrigger value="activity" className="text-xs data-[state=active]:bg-discord-primary">
                           <Users className="h-3 w-3 mr-1" />
                           Activity
                         </TabsTrigger>
-                        <TabsTrigger
-                          value="chat"
-                          className="text-xs data-[state=active]:bg-discord-primary"
-                        >
+                        <TabsTrigger value="chat" className="text-xs data-[state=active]:bg-discord-primary">
                           <MessageSquare className="h-3 w-3 mr-1" />
                           Chat
                         </TabsTrigger>
-                        <TabsTrigger
-                          value="ai"
-                          className="text-xs data-[state=active]:bg-discord-primary"
-                        >
+                        <TabsTrigger value="ai" className="text-xs data-[state=active]:bg-discord-primary">
                           <Brain className="h-3 w-3 mr-1" />
                           AI
                         </TabsTrigger>
@@ -592,30 +664,24 @@ const RoomContent = () => {
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     </div>
-                    <TabsContent
-                      value="activity"
-                      className="flex-1 m-0 p-0 overflow-hidden"
-                    >
-                      <ActivityPanel
-                        participants={roomParticipants}
-                        roomId={roomId || ''}
-                      />
+                    <TabsContent value="activity" className="flex-1 m-0 p-0 overflow-hidden">
+                      <ActivityPanel participants={roomParticipants} roomId={roomId || ''} />
                     </TabsContent>
-                    <TabsContent
-                      value="chat"
-                      className="flex-1 m-0 p-0 overflow-hidden"
-                    >
+                    <TabsContent value="chat" className="flex-1 m-0 p-0 overflow-hidden">
                       <Chat roomId={roomId || ''} />
                     </TabsContent>
-                    <TabsContent
-                      value="ai"
-                      className="flex-1 m-0 p-0 overflow-hidden"
-                    >
+                    <TabsContent value="ai" className="flex-1 m-0 p-0 overflow-hidden">
                       <AIAssistant
                         activeFileName={selectedFile?.name}
                         activeFileContent={selectedFile?.content}
                         activeFileLanguage={selectedFile?.language}
                         cursorPosition={cursorPosition}
+                        workspaceFiles={openTabs.map(t => ({
+                          name: t.name,
+                          path: t.path || t.name,
+                          content: t.content,
+                          language: t.language,
+                        }))}
                         onInsertCode={(code, fileName, position) => {
                           // Handle code insertion into the active editor
                           console.log('Insert code:', code, fileName, position);

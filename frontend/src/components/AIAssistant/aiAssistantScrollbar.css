@@ -1,0 +1,23 @@
+/* Sleek, modern scrollbar for AIAssistant */
+.custom-ai-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #444 #18181b;
+}
+
+.custom-ai-scrollbar::-webkit-scrollbar {
+  width: 7px;
+  background: transparent;
+}
+.custom-ai-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(120deg, #23272f 40%, #444 100%);
+  border-radius: 8px;
+  min-height: 40px;
+  border: 2px solid #18181b;
+}
+.custom-ai-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(120deg, #444 40%, #6366f1 100%);
+}
+.custom-ai-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 8px;
+}

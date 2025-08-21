@@ -323,7 +323,7 @@ export const UsersPanel: React.FC<UsersPanelProps> = ({
               id: user._id || user.id || participant.userId,
               username: user.email?.split('@')[0] || user.name?.toLowerCase().replace(/\s+/g, '_') || 'user',
               displayName: user.name || participant.name || 'Unknown User',
-              avatar: user.profilePicId ? `/api/files/${user.profilePicId}` : undefined,
+              avatar: user.profilePicId ? `/api/v1/files/${user.profilePicId}` : undefined,
               status: user.activityStatus === 'Online' ? 'online' : 
                      user.activityStatus === 'Away' ? 'away' :
                      user.activityStatus === 'Busy' ? 'busy' : 'offline',

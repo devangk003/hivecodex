@@ -30,7 +30,7 @@ export class EnhancedSocketService {
 
   constructor(config: Partial<EnhancedSocketConfig> = {}) {
     this.config = {
-      serverUrl: process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001',
+  serverUrl: import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001',
       autoReconnect: true,
       reconnectAttempts: 5,
       reconnectDelay: 1000,

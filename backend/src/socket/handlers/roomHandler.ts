@@ -52,6 +52,13 @@ export function registerRoomHandlers(
       });
 
       await User.findByIdAndUpdate(userId, { activityStatus: "online" });
+      // Emit status change to room
+      io.to(roomId).emit("statusChange", {
+  userId,
+  userName,
+  online: true,
+  timestamp,
+      });
 
       const room = await Room.findOne({ id: roomId });
       if (room) {
@@ -97,6 +104,8 @@ export function registerRoomHandlers(
       removeUser(socket.id);
       updateUserActivity(socket.id);
 
+      // Do NOT set user as away here; only remove from room
+
       // Update DB participant list
       const room = await Room.findOne({ id: roomId });
       if (room) {
@@ -110,6 +119,14 @@ export function registerRoomHandlers(
       socket.to(roomId).emit("userDisconnected", {
         userId,
         userName: (userName as string) || "",
+        timestamp: new Date().toISOString(),
+      });
+
+      // Emit status change to room (optional: you may want to remove this if you only want to show offline on disconnect)
+      io.to(roomId).emit("statusChange", {
+        userId,
+        userName: (userName as string) || "",
+        online: false,
         timestamp: new Date().toISOString(),
       });
 
@@ -143,6 +160,14 @@ export function registerRoomHandlers(
 
     removeUser(socket.id);
     await User.findByIdAndUpdate(userId, { activityStatus: "offline" }).catch(() => {});
+
+    // Emit status change to room
+    io.to(roomId).emit("statusChange", {
+  userId,
+  userName: (userName as string) || "",
+  online: false,
+  timestamp: new Date().toISOString(),
+    });
 
     setTimeout(() => {
       socket.to(roomId).emit("userDisconnected", {

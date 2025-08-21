@@ -57,7 +57,7 @@ class AIService {
     options: RequestInit = {}
   ): Promise<APIResponse<T>> {
     try {
-      const response = await fetch(`${this.baseURL}/api/ai${endpoint}`, {
+      const response = await fetch(`${this.baseURL}/api/v1/ai${endpoint}`, {
         headers: {
           'Content-Type': 'application/json',
           ...options.headers,

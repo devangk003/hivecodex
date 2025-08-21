@@ -92,11 +92,11 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
     try {
       let updatedReactions: Reaction[] = [];
       if (hasReacted) {
-        const res = await chatAPI.removeReaction(messageId, emoji);
+        const res = await chatAPI.removeReaction(roomId, messageId, emoji);
         console.log('Remove reaction response:', res);
         updatedReactions = res.reactions;
       } else {
-        const res = await chatAPI.addReaction(messageId, emoji);
+        const res = await chatAPI.addReaction(roomId, messageId, emoji);
         console.log('Add reaction response:', res);
         updatedReactions = res.reactions;
       }
@@ -358,7 +358,7 @@ const Chat: React.FC<ChatProps> = ({ roomId, onClose }) => {
                         <Avatar className="w-10 h-10 flex-shrink-0 mt-0.5">
                           {message.profilePicId ? (
                             <AvatarImage
-                              src={`/api/profile/picture/${message.profilePicId}`}
+                              src={`/api/v1/files/${message.profilePicId}`}
                               alt={message.sender}
                             />
                           ) : (

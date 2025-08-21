@@ -11,18 +11,30 @@ export const PORT = Number(process.env.PORT) || 5000;
 
 // Security Configuration
 export const SECURITY_CONFIG = {
-  // Rate Limiting
+  // Rate Limiting - Production-level limits for collaborative coding platform
   AUTH_RATE_LIMIT: {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5 // 5 attempts per window
+    max: 20 // 20 login attempts per window (allows multiple sessions/devices)
   },
   GENERAL_RATE_LIMIT: {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // 100 requests per window
+    max: 1000 // 1000 requests per window (real-time collaboration needs high throughput)
+  },
+  ROOM_RATE_LIMIT: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 500 // 500 room operations per window (file ops, chat, presence)
+  },
+  FILE_RATE_LIMIT: {
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 200 // 200 file operations per minute (for real-time editing)
+  },
+  CHAT_RATE_LIMIT: {
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 60 // 60 messages per minute (1 per second average)
   },
   STRICT_RATE_LIMIT: {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 30 // 30 requests per window
+    max: 100 // 100 requests per window (for sensitive operations)
   },
   
   // Request Limits

@@ -3,6 +3,7 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import http from "http";
+import helmet from "helmet";
 import { Server } from "socket.io";
 import { GridFSBucket, ObjectId } from "mongodb";
 import bcrypt from "bcrypt";
@@ -48,20 +49,17 @@ const app = express();
 
 // ==================== SECURITY CONFIGURATION ====================
 
-// Security headers middleware (using basic Express headers since helmet.js not available)
-app.use((req, res, next) => {
-  // Prevent clickjacking
-  res.setHeader('X-Frame-Options', SECURITY_CONFIG.SECURITY_HEADERS.X_FRAME_OPTIONS);
-  // Prevent MIME type sniffing
-  res.setHeader('X-Content-Type-Options', SECURITY_CONFIG.SECURITY_HEADERS.X_CONTENT_TYPE_OPTIONS);
-  // Enable XSS protection
-  res.setHeader('X-XSS-Protection', SECURITY_CONFIG.SECURITY_HEADERS.X_XSS_PROTECTION);
-  // Referrer policy
-  res.setHeader('Referrer-Policy', SECURITY_CONFIG.SECURITY_HEADERS.REFERRER_POLICY);
-  // Content Security Policy
-  res.setHeader('Content-Security-Policy', SECURITY_CONFIG.SECURITY_HEADERS.CONTENT_SECURITY_POLICY);
-  // Permissions policy
-  res.setHeader('Permissions-Policy', SECURITY_CONFIG.SECURITY_HEADERS.PERMISSIONS_POLICY);
+// Use Helmet for security headers
+app.use(helmet());
+
+// Correlation ID middleware
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const existing = (req.headers['x-correlation-id'] as string) || (req.headers['x-request-id'] as string);
+  const correlationId = existing || crypto.randomUUID();
+  // Expose on request/response
+  (req as any).correlationId = correlationId;
+  res.locals.correlationId = correlationId;
+  res.setHeader('X-Correlation-Id', correlationId);
   next();
 });
 
@@ -88,7 +86,7 @@ const createRateLimiter = (windowMs: number, max: number, message: string) => {
   });
 };
 
-// Apply rate limiting to different endpoints
+// Apply rate limiting to different endpoints with production-level limits
 const authLimiter = createRateLimiter(
   SECURITY_CONFIG.AUTH_RATE_LIMIT.windowMs, 
   SECURITY_CONFIG.AUTH_RATE_LIMIT.max, 
@@ -98,6 +96,21 @@ const generalLimiter = createRateLimiter(
   SECURITY_CONFIG.GENERAL_RATE_LIMIT.windowMs, 
   SECURITY_CONFIG.GENERAL_RATE_LIMIT.max, 
   'Too many requests, please try again later'
+);
+const roomLimiter = createRateLimiter(
+  SECURITY_CONFIG.ROOM_RATE_LIMIT.windowMs, 
+  SECURITY_CONFIG.ROOM_RATE_LIMIT.max, 
+  'Too many room operations, please slow down'
+);
+const fileLimiter = createRateLimiter(
+  SECURITY_CONFIG.FILE_RATE_LIMIT.windowMs, 
+  SECURITY_CONFIG.FILE_RATE_LIMIT.max, 
+  'Too many file operations, please slow down'
+);
+const chatLimiter = createRateLimiter(
+  SECURITY_CONFIG.CHAT_RATE_LIMIT.windowMs, 
+  SECURITY_CONFIG.CHAT_RATE_LIMIT.max, 
+  'Too many messages, please slow down'
 );
 const strictLimiter = createRateLimiter(
   SECURITY_CONFIG.STRICT_RATE_LIMIT.windowMs, 
@@ -194,10 +207,33 @@ app.use(cors(corsOptions));
 app.use(requestSizeLimiter);
 app.use(sanitizeInput);
 
-// Apply rate limiting
+// Apply granular rate limiting based on endpoint functionality
+// Authentication endpoints - moderate limits for login/register
 app.use('/api/auth', authLimiter);
+app.use('/api/v1/auth', authLimiter);
+
+// Room operations - higher limits for collaborative features
+app.use('/api/rooms', roomLimiter);
+app.use('/api/v1/rooms', roomLimiter);
+
+// File operations - high limits for real-time editing
+app.use('/api/files', fileLimiter);
+app.use('/api/v1/files', fileLimiter);
+
+// Chat/messaging - moderate limits to prevent spam
+app.use('/api/messages', chatLimiter);
+app.use('/api/v1/messages', chatLimiter);
+
+// Profile and user operations - strict limits for sensitive data
+app.use('/api/profile', strictLimiter);
+app.use('/api/v1/profile', strictLimiter);
+app.use('/api/user', strictLimiter);
+app.use('/api/v1/user', strictLimiter);
+
+// General fallback for any other endpoints
 app.use('/api/', generalLimiter);
-app.use('/api/rooms', strictLimiter);
+app.use('/api/v1/', generalLimiter);
+app.use('/api/v1', generalLimiter);
 
 // Body parsing with strict limits
 app.use(express.json({ 
@@ -222,13 +258,14 @@ app.use(express.urlencoded({
   parameterLimit: SECURITY_CONFIG.MAX_PARAMETERS
 }));
 
-// Add comprehensive request logging middleware
+// Add comprehensive request logging middleware (with correlation ID)
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   const startTime = Date.now();
   const timestamp = new Date().toISOString();
+  const cid = (req as any).correlationId;
   
   // Log incoming request
-  console.log(`\n🔥 [${timestamp}] ${req.method} ${req.url}`);
+  console.log(`\n🔥 [${timestamp}] [CID:${cid}] ${req.method} ${req.url}`);
   console.log(`📍 IP: ${req.ip}`);
   console.log(`🔑 Headers: ${JSON.stringify(req.headers, null, 2)}`);
   
@@ -244,7 +281,7 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
   const originalJson = res.json;
   res.json = function(body: any) {
     const duration = Date.now() - startTime;
-    console.log(`✅ [${new Date().toISOString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+    console.log(`✅ [${new Date().toISOString()}] [CID:${cid}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
     console.log(`📤 Response: ${JSON.stringify(body, null, 2)}`);
     return originalJson.call(this, body);
   };
@@ -253,7 +290,7 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
   const originalSend = res.send;
   res.send = function(body: any) {
     const duration = Date.now() - startTime;
-    console.log(`✅ [${new Date().toISOString()}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+    console.log(`✅ [${new Date().toISOString()}] [CID:${cid}] ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
     console.log(`📤 Response: ${body}`);
     return originalSend.call(this, body);
   };
@@ -318,6 +355,7 @@ const handleValidationErrors = (req: express.Request, res: express.Response, nex
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction): void => {
   const timestamp = new Date().toISOString();
+  const cid = (req as any).correlationId;
   
   // Handle CORS errors
   if (err.message === 'Not allowed by CORS') {
@@ -326,6 +364,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
       message: 'Origin not allowed',
       timestamp,
       endpoint: `${req.method} ${req.url}`,
+      correlationId: cid,
     });
     return;
   }
@@ -337,6 +376,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
       message: 'Invalid JSON payload',
       timestamp,
       endpoint: `${req.method} ${req.url}`,
+      correlationId: cid,
     });
     return;
   }
@@ -348,6 +388,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
       message: 'Too many requests',
       timestamp,
       endpoint: `${req.method} ${req.url}`,
+      correlationId: cid,
       retryAfter: (err as any).headers?.['retry-after'] || 900
     });
     return;
@@ -359,6 +400,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     message: err.message || 'Internal Server Error',
     timestamp,
     endpoint: `${req.method} ${req.url}`,
+    correlationId: cid,
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
@@ -412,10 +454,10 @@ export { gridfsBucket };
 // Configure multer for file uploads
 const upload = multer();
 
-// Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/ai", aiRoutes);
-app.use("/api/rooms", roomRoutes);
+// Versioned routes
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/ai", aiRoutes);
+app.use("/api/v1/rooms", roomRoutes);
 
 // Authentication middleware
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
@@ -448,13 +490,23 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
 
 // Essential API endpoints that frontend needs
 
-// Health check endpoint
+// Health check endpoints
 app.get("/health", (req: express.Request, res: express.Response) => {
   res.json({ 
     status: "OK", 
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: "2.0.0-ts"
+  });
+});
+
+app.get("/api/v1/health", (req: express.Request, res: express.Response) => {
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: "2.0.0-ts",
+    correlationId: (req as any).correlationId,
   });
 });
 
@@ -467,7 +519,7 @@ app.get("/api/test", (req: express.Request, res: express.Response) => {
 });
 
 // Authentication endpoints (from server.js)
-app.post("/api/register", 
+app.post("/api/v1/register", 
   upload.single("profilePic"),
   [
     commonValidations.name,
@@ -546,7 +598,7 @@ app.post("/api/register",
   }
 });
 
-app.post("/api/login", 
+app.post("/api/v1/login", 
   [
     commonValidations.email,
     commonValidations.password
@@ -621,7 +673,7 @@ app.post("/api/login",
 });
 
 // Get current user
-app.get("/api/user", authenticateToken, async (req, res): Promise<any> => {
+app.get("/api/v1/user", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const user = await User.findById((req as any).user.id).select(
@@ -654,7 +706,7 @@ app.get("/api/user", authenticateToken, async (req, res): Promise<any> => {
 });
 
 // Get user's rooms
-app.get("/api/user/rooms", authenticateToken, async (req: express.Request, res: express.Response) => {
+app.get("/api/v1/user/rooms", authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     await dbConnectionPromise;
     const userIdStr = (req as any).user.id;
@@ -678,7 +730,7 @@ app.get("/api/user/rooms", authenticateToken, async (req: express.Request, res: 
 });
 
 // Get user activity status
-app.get("/api/user/activity-status", authenticateToken, async (req: express.Request, res: express.Response) => {
+app.get("/api/v1/user/activity-status", authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     await dbConnectionPromise;
     const user = await User.findById((req as any).user.id).select('activityStatus').lean();
@@ -698,7 +750,7 @@ app.get("/api/user/activity-status", authenticateToken, async (req: express.Requ
 });
 
 // Update user activity status
-app.put("/api/user/activity-status", authenticateToken, async (req, res): Promise<any> => {
+app.put("/api/v1/user/activity-status", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { activityStatus } = req.body;
@@ -733,7 +785,7 @@ app.put("/api/user/activity-status", authenticateToken, async (req, res): Promis
 });
 
 // Rooms endpoints
-app.get("/api/rooms", authenticateToken, async (req: express.Request, res: express.Response) => {
+app.get("/api/v1/rooms", authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     await dbConnectionPromise;
     const page = parseInt(req.query.page as string) || 1;
@@ -771,7 +823,7 @@ app.get("/api/rooms", authenticateToken, async (req: express.Request, res: expre
   }
 });
 
-app.post("/api/rooms", 
+app.post("/api/v1/rooms", 
   authenticateToken,
   [
     commonValidations.roomName
@@ -831,7 +883,7 @@ app.post("/api/rooms",
   }
 });
 
-app.post("/api/rooms/:roomId/join", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.post("/api/v1/rooms/:roomId/join", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -883,7 +935,7 @@ app.post("/api/rooms/:roomId/join", authenticateToken, async (req: express.Reque
   }
 });
 
-app.get("/api/rooms/:roomId", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.get("/api/v1/rooms/:roomId", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -913,7 +965,7 @@ app.get("/api/rooms/:roomId", authenticateToken, async (req: express.Request, re
 });
 
 // Profile endpoints
-app.get("/api/profile", authenticateToken, async (req, res): Promise<any> => {
+app.get("/api/v1/profile", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const user = await User.findById((req as any).user.id).select("-password");
@@ -942,7 +994,7 @@ app.get("/api/profile", authenticateToken, async (req, res): Promise<any> => {
 });
 
 // Update user profile
-app.post("/api/profile/update", authenticateToken, upload.single("profilePic"), async (req, res): Promise<any> => {
+app.post("/api/v1/profile/update", authenticateToken, upload.single("profilePic"), async (req, res): Promise<any> => {
   console.log("=== Profile update endpoint reached ===");
   console.log("Request body:", req.body);
   console.log("Request file:", req.file);
@@ -1130,7 +1182,7 @@ process.on("SIGINT", () => {
 
 // Missing endpoints that frontend expects
 // Get user profile by ID
-app.get("/api/users/:userId/profile", authenticateToken, async (req, res): Promise<any> => {
+app.get("/api/v1/users/:userId/profile", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { userId } = req.params;
@@ -1166,7 +1218,7 @@ app.get("/api/users/:userId/profile", authenticateToken, async (req, res): Promi
 });
 
 // Get users in a room
-app.get("/api/rooms/:roomId/users", authenticateToken, async (req, res): Promise<any> => {
+app.get("/api/v1/rooms/:roomId/users", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -1222,7 +1274,7 @@ app.get("/api/rooms/:roomId/users", authenticateToken, async (req, res): Promise
 });
 
 // Update user status
-app.put("/api/user/status", authenticateToken, async (req, res): Promise<any> => {
+app.put("/api/v1/user/status", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { status, roomId } = req.body;
@@ -1257,7 +1309,7 @@ app.put("/api/user/status", authenticateToken, async (req, res): Promise<any> =>
 });
 
 // Leave room endpoint
-app.post("/api/rooms/:roomId/leave", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/v1/rooms/:roomId/leave", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -1298,7 +1350,7 @@ app.post("/api/rooms/:roomId/leave", authenticateToken, async (req, res): Promis
 // User Management Endpoints
 
 // Kick user from room
-app.post("/api/rooms/:roomId/users/:userId/kick", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/v1/rooms/:roomId/users/:userId/kick", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId, userId } = req.params;
@@ -1362,7 +1414,7 @@ app.post("/api/rooms/:roomId/users/:userId/kick", authenticateToken, async (req,
 });
 
 // Update user role in room
-app.put("/api/rooms/:roomId/users/:userId/role", authenticateToken, async (req, res): Promise<any> => {
+app.put("/api/v1/rooms/:roomId/users/:userId/role", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId, userId } = req.params;
@@ -1435,7 +1487,7 @@ app.put("/api/rooms/:roomId/users/:userId/role", authenticateToken, async (req, 
 });
 
 // Invite user to room
-app.post("/api/rooms/:roomId/invite", authenticateToken, async (req, res): Promise<any> => {
+app.post("/api/v1/rooms/:roomId/invite", authenticateToken, async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -1521,7 +1573,7 @@ app.post("/api/rooms/:roomId/invite", authenticateToken, async (req, res): Promi
 });
 
 // Fix file download endpoint to match frontend expectation
-app.get("/api/files/:fileId/download", async (req: express.Request, res: express.Response) => {
+app.get("/api/v1/files/:fileId/download", async (req: express.Request, res: express.Response) => {
   try {
     await dbConnectionPromise;
     const { fileId } = req.params;
@@ -1543,7 +1595,7 @@ app.get("/api/files/:fileId/download", async (req: express.Request, res: express
 });
 
 // Profile picture endpoint for consistent frontend access
-app.get("/api/profile/picture/:pictureId", async (req, res): Promise<any> => {
+app.get("/api/v1/profile/picture/:pictureId", async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { pictureId } = req.params;
@@ -1575,7 +1627,7 @@ app.get("/api/profile/picture/:pictureId", async (req, res): Promise<any> => {
 });
 
 // Alternative endpoint for backward compatibility
-app.get("/api/files/:fileId", async (req, res): Promise<any> => {
+app.get("/api/v1/files/:fileId", async (req, res): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { fileId } = req.params;
@@ -1607,7 +1659,7 @@ app.get("/api/files/:fileId", async (req, res): Promise<any> => {
 });
 
 // Get file content for editing
-app.get("/api/files/:fileId/content", authenticateToken, async (req, res): Promise<any> => {
+app.get("/api/v1/files/:fileId/content", authenticateToken, async (req, res): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n📄 [${timestamp}] FILE CONTENT REQUEST`);
   console.log(`📁 File ID: ${req.params.fileId}`);
@@ -1678,7 +1730,7 @@ app.get("/api/files/:fileId/content", authenticateToken, async (req, res): Promi
 });
 
 // Update file content
-app.put("/api/files/:fileId/content", authenticateToken, async (req, res): Promise<any> => {
+app.put("/api/v1/files/:fileId/content", authenticateToken, async (req, res): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n📝 [${timestamp}] FILE CONTENT UPDATE REQUEST`);
   console.log(`📁 File ID: ${req.params.fileId}`);
@@ -1793,7 +1845,7 @@ app.put("/api/files/:fileId/content", authenticateToken, async (req, res): Promi
 });
 
 // Get room messages
-app.get("/api/rooms/:roomId/messages", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.get("/api/v1/rooms/:roomId/messages", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n💬 [${timestamp}] GET MESSAGES REQUEST`);
   console.log(`🏠 Room ID: ${req.params.roomId}`);
@@ -1856,7 +1908,7 @@ app.get("/api/rooms/:roomId/messages", authenticateToken, async (req: express.Re
 });
 
 // Post message to room
-app.post("/api/rooms/:roomId/messages", 
+app.post("/api/v1/rooms/:roomId/messages", 
   authenticateToken,
   [
     commonValidations.message
@@ -1938,7 +1990,7 @@ app.post("/api/rooms/:roomId/messages",
 });
 
 // Add reaction to message
-app.post("/api/messages/:messageId/reactions", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.post("/api/v1/messages/:messageId/reactions", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n😀 [${timestamp}] ADD REACTION REQUEST`);
   console.log(`📝 Message ID: ${req.params.messageId}`);
@@ -2017,7 +2069,7 @@ app.post("/api/messages/:messageId/reactions", authenticateToken, async (req: ex
 });
 
 // Remove reaction from message
-app.delete("/api/messages/:messageId/reactions", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.delete("/api/v1/messages/:messageId/reactions", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   const timestamp = new Date().toISOString();
   console.log(`\n😞 [${timestamp}] REMOVE REACTION REQUEST`);
   console.log(`📝 Message ID: ${req.params.messageId}`);
@@ -2086,7 +2138,7 @@ app.delete("/api/messages/:messageId/reactions", authenticateToken, async (req: 
 });
 
 // Get room files
-app.get("/api/rooms/:roomId/files", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.get("/api/v1/rooms/:roomId/files", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -2105,7 +2157,7 @@ app.get("/api/rooms/:roomId/files", authenticateToken, async (req: express.Reque
 });
 
 // Create empty file in room
-app.post("/api/rooms/:roomId/create-file", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.post("/api/v1/rooms/:roomId/create-file", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -2152,7 +2204,7 @@ app.post("/api/rooms/:roomId/create-file", authenticateToken, async (req: expres
 });
 
 // Create folder in room
-app.post("/api/rooms/:roomId/create-folder", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.post("/api/v1/rooms/:roomId/create-folder", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -2182,7 +2234,7 @@ app.post("/api/rooms/:roomId/create-folder", authenticateToken, async (req: expr
 });
 
 // Move file or folder (change parent)
-app.patch("/api/rooms/:roomId/move", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.patch("/api/v1/rooms/:roomId/move", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;
@@ -2215,7 +2267,7 @@ app.patch("/api/rooms/:roomId/move", authenticateToken, async (req: express.Requ
 });
 
 // Bulk operations (delete)
-app.patch("/api/rooms/:roomId/files", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
+app.patch("/api/v1/rooms/:roomId/files", authenticateToken, async (req: express.Request, res: express.Response): Promise<any> => {
   try {
     await dbConnectionPromise;
     const { roomId } = req.params;

@@ -1,4 +1,18 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+
+// Utility: Wait for socket to be connected before emitting
+function waitForSocketConnection(socket, timeout = 5000) {
+  return new Promise((resolve, reject) => {
+    if (socket && socket.connected) return resolve(true);
+    const start = Date.now();
+    function check() {
+      if (socket && socket.connected) return resolve(true);
+      if (Date.now() - start > timeout) return reject(new Error('Socket connect timeout'));
+      setTimeout(check, 50);
+    }
+    check();
+  });
+}
 import { Socket } from 'socket.io-client';
 import { enhancedSocketService } from '../services/enhancedSocket';
 import { fileSyncService } from '../services/fileSynchronization';
@@ -50,6 +64,9 @@ export const useSocket = (
   const initializationRef = useRef(false);
   const servicesInitializedRef = useRef(false);
 
+  // Track joined rooms for robust re-join
+  const joinedRoomsRef = useRef<Set<string>>(new Set());
+
   // Initialize socket connection
   const initializeSocket = useCallback(async () => {
     if (initializationRef.current) return;
@@ -64,7 +81,7 @@ export const useSocket = (
       }
 
       const socket = await enhancedSocketService.connect();
-      
+
       setSocketState(prev => ({
         ...prev,
         socket,
@@ -78,6 +95,18 @@ export const useSocket = (
         initializeServices(socket);
         servicesInitializedRef.current = true;
       }
+
+      // On connect/reconnect, re-join all rooms
+      socket.on('connect', () => {
+        joinedRoomsRef.current.forEach(roomId => {
+          socket.emit('joinRoom', { roomId, userId, userName: username });
+        });
+        console.log('Socket connected!');
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Socket disconnected!');
+      });
 
       onConnect?.();
 
@@ -203,9 +232,16 @@ export const useSocket = (
     }));
   }, []);
 
+
+  // Only emit if connected
   const emit = useCallback((event: string, data?: Record<string, unknown>) => {
-    enhancedSocketService.emit(event, data);
-  }, []);
+    const socket = socketState.socket;
+    if (socket && socket.connected) {
+      socket.emit(event, data);
+    } else {
+      console.warn(`Cannot emit ${event}: Socket not connected`);
+    }
+  }, [socketState.socket]);
 
   const emitWithAck = useCallback(async (event: string, data?: Record<string, unknown>, timeout?: number) => {
     return enhancedSocketService.emitWithAck(event, data, timeout);
@@ -220,23 +256,31 @@ export const useSocket = (
   }, []);
 
   // Room management functions
+
+  // Robust joinRoom/leaveRoom: track joined rooms, only emit if connected
   const joinRoom = useCallback(async (roomId: string, options?: Record<string, unknown>) => {
-    try {
-      return await enhancedSocketService.joinRoom(roomId, options);
-    } catch (error) {
-      onError?.(error);
-      throw error;
+    const socket = socketState.socket;
+    if (!roomId) return;
+    joinedRoomsRef.current.add(roomId);
+    if (socket && socket.connected) {
+      socket.emit('joinRoom', { roomId, userId, userName: username, ...options });
+    } else {
+      // Will auto re-join on connect
+      console.warn('Socket not connected, will auto-join on connect');
     }
-  }, [onError]);
+  }, [socketState.socket, userId, username]);
 
   const leaveRoom = useCallback(async (roomId: string) => {
-    try {
-      return await enhancedSocketService.leaveRoom(roomId);
-    } catch (error) {
-      onError?.(error);
-      throw error;
+    const socket = socketState.socket;
+    if (!roomId) return;
+    joinedRoomsRef.current.delete(roomId);
+    if (socket && socket.connected) {
+      socket.emit('leave-room', { roomId, userId });
+    } else {
+      // No need to emit if not connected
+      console.warn('Socket not connected, cannot emit leave-room');
     }
-  }, [onError]);
+  }, [socketState.socket, userId]);
 
   // File synchronization functions
   const syncFile = useCallback((operation: FileOperation) => {

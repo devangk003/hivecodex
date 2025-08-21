@@ -37,7 +37,9 @@ services:
       # This passes the API URL to the Docker build process
       # The browser will access the backend via localhost:5000 on the host machine
       args:
-        VITE_API_URL: http://localhost:5000
+        VITE_API_URL: http://localhost:5000/api/v1
+    environment:
+      - VITE_API_URL=http://localhost:5000/api/v1
     restart: always
     ports:
       # The internal port is 80 (Nginx default), mapped to 8080 on your machine

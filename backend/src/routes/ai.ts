@@ -57,7 +57,7 @@ const checkAIService = (req: express.Request, res: express.Response, next: expre
   next();
 };
 
-// GET /api/ai/models - Get available AI models
+// GET /api/v1/ai/models - Get available AI models
 router.get('/models', async (req: express.Request, res: express.Response): Promise<void> => {
   try {
     const models = await aiService.getAvailableModels();

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { useEnhancedUserStatus } from '@/hooks/useEnhancedUserStatus';
 import socketService from '@/lib/socket';
@@ -190,13 +190,13 @@ export const UserStatusProvider: React.FC<UserStatusProviderProps> = ({ children
     return participants.get(userId) || null;
   };
 
-  const updateParticipantStatus = (userData: UserStatusData) => {
+  const updateParticipantStatus = useCallback((userData: UserStatusData) => {
     setParticipants(prev => {
       const newMap = new Map(prev);
       newMap.set(userData.userId, userData);
       return newMap;
     });
-  };
+  }, []);
 
   const value: UserStatusContextType = {
     globalStatus,

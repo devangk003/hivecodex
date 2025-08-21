@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Use '/api' for all API calls
-export const API_BASE_URL = '/api';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -28,15 +28,18 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   response => response,
   error => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    }
-    if (error.response?.status === 403) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+    // Only logout on 401/403 if the error message indicates invalid/expired token
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      const errorMessage = error.response?.data?.message || '';
+      
+      // Only logout for token-related errors, not for other authorization issues
+      if (errorMessage.includes('Invalid token') || 
+          errorMessage.includes('expired') || 
+          errorMessage.includes('Access token is required')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -49,65 +52,44 @@ export interface User {
   profilePicId?: string;
   activityStatus?: string;
 }
+
 // User API
 export const userAPI = {
-  getUserProfile: async (userId: string) => {
+  // NOTE: This fetches the currently authenticated user's profile, not any user by ID.
+  getUserProfile: async () => {
     try {
-      const response = await api.get(`/users/${userId}/profile`);
+      // The backend endpoint is /api/v1/profile, which gets the current user's profile based on the auth token.
+      const response = await api.get(`/v1/profile`);
       return response.data;
     } catch (error) {
-      console.warn(`User profile endpoint not available for user ${userId}`);
+      console.error(`Failed to fetch user profile:`, error);
       return null;
     }
   },
 
   getUsersInRoom: async (roomId: string) => {
     try {
+      // This endpoint is defined in roomRoutes.ts
       const response = await api.get(`/rooms/${roomId}/users`);
       return response.data;
     } catch (error) {
-      console.warn(`Room users endpoint not available for room ${roomId}`);
+      console.warn(`Failed to get users for room ${roomId}:`, error);
       return [];
     }
   },
 
-  kickUser: async (roomId: string, userId: string) => {
-    try {
-      const response = await api.post(`/rooms/${roomId}/users/${userId}/kick`);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to kick user:', error);
-      throw error;
-    }
-  },
-
-  updateUserRole: async (roomId: string, userId: string, role: string) => {
-    try {
-      const response = await api.put(`/rooms/${roomId}/users/${userId}/role`, { role });
-      return response.data;
-    } catch (error) {
-      console.error('Failed to update user role:', error);
-      throw error;
-    }
-  },
-
-  inviteUserToRoom: async (roomId: string, email: string) => {
-    try {
-      const response = await api.post(`/rooms/${roomId}/invite`, { email });
-      return response.data;
-    } catch (error) {
-      console.error('Failed to invite user:', error);
-      throw error;
-    }
-  },
+  // The following endpoints are not implemented in the backend yet.
+  // kickUser: async (roomId: string, userId: string) => { ... },
+  // updateUserRole: async (roomId: string, userId: string, role: string) => { ... },
+  // inviteUserToRoom: async (roomId: string, email: string) => { ... },
 
   updateUserStatus: async (status: string, roomId?: string) => {
     try {
-      const response = await api.put('/user/status', { status, roomId });
+      const response = await api.put('/user/activity-status', { activityStatus: status, roomId });
       return response.data;
     } catch (error) {
-      console.warn('User status update endpoint not available');
-      return { status, roomId };
+      console.error('Failed to update user status:', error);
+      throw error;
     }
   },
 };
@@ -193,38 +175,28 @@ export interface Participant {
 // Auth API
 export const authAPI = {
   login: async (email: string, password: string) => {
+    // Backend route is POST /api/v1/login
     const response = await api.post('/login', { email, password });
     return response.data;
   },
 
-  register: async (name: string, email: string, password: string) => {
-    const response = await api.post('/register', { name, email, password });
+  register: async (formData: FormData) => {
+    // Backend route is POST /api/v1/register and expects multipart/form-data
+    const response = await api.post('/register', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 
   getCurrentUser: async () => {
+    // Backend route is GET /api/v1/user
     const response = await api.get('/user');
     return response.data;
   },
 
-  updateProfile: async (data: FormData | {
-    name?: string;
-    email?: string;
-    profilePic?: File | null;
-  }) => {
-    let formData: FormData;
-    
-    if (data instanceof FormData) {
-      formData = data;
-    } else {
-      // Convert object to FormData for backward compatibility
-      formData = new FormData();
-      if (data.name) formData.append('name', data.name);
-      if (data.email) formData.append('email', data.email);
-      if (data.profilePic) formData.append('profilePic', data.profilePic);
-    }
-    
-    const response = await api.post('/profile/update', formData, {
+  updateProfile: async (formData: FormData) => {
+    // Backend route is POST /api/v1/profile/update
+    const response = await api.post('/v1/profile/update', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data.data; // Backend returns nested data
@@ -240,11 +212,8 @@ export const roomAPI = {
 
   getUserRooms: async () => {
     const response = await api.get('/user/rooms');
-    // Always return an array
-    if (Array.isArray(response.data)) return response.data;
-    if (response.data && Array.isArray(response.data.rooms))
-      return response.data.rooms;
-    return [];
+    // The backend now returns the array directly
+    return response.data || [];
   },
 
   getRoom: async (roomId: string) => {
@@ -259,7 +228,7 @@ export const roomAPI = {
     password?: string
   ) => {
     const response = await api.post('/rooms', {
-      name,
+      roomName: name, // The backend expects 'roomName'
       description,
       isPrivate,
       password,
@@ -273,7 +242,7 @@ export const roomAPI = {
   },
 
   getRoomParticipants: async (roomId: string) => {
-    const response = await api.get(`/rooms/${roomId}/participants`);
+    const response = await api.get(`/rooms/${roomId}/users`);
     return response.data;
   },
 
@@ -290,172 +259,28 @@ export const roomAPI = {
 
 // File API
 export const fileAPI = {
-  moveFileOrFolder: async (
-    roomId: string,
-    fileId: string,
-    newParentId?: string | null
-  ) => {
-    // PATCH endpoint to update parentId of file/folder
-    const payload: { fileId: string; newParentId?: string | null } = { fileId };
-    if (newParentId) {
-      payload.newParentId = newParentId;
-    } else {
-      payload.newParentId = null;
-    }
-    const response = await api.patch(`/rooms/${roomId}/move`, payload);
-    return response.data;
-  },
-  uploadFile: async (
-    roomId: string,
-    file: File,
-    onProgress?: (progress: number) => void
-  ) => {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await api.post(`/rooms/${roomId}/files`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      onUploadProgress: progressEvent => {
-        if (onProgress && progressEvent.total) {
-          const progress = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          onProgress(progress);
-        }
-      },
-    });
-
-    return response.data;
-  },
-
-  uploadFolder: async (
-    roomId: string,
-    files: File[],
-    onProgress?: (progress: number) => void
-  ) => {
-    const formData = new FormData();
-    for (const file of files) {
-      // Use webkitRelativePath if available, fallback to name
-      const relPath =
-        typeof (file as File & { webkitRelativePath?: string })
-          .webkitRelativePath === 'string'
-          ? (file as File & { webkitRelativePath?: string }).webkitRelativePath
-          : file.name;
-      formData.append('files', file, relPath);
-    }
-    const response = await api.post(
-      `/rooms/${roomId}/upload-folder`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        onUploadProgress: progressEvent => {
-          if (onProgress && progressEvent.total) {
-            const progress = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            onProgress(progress);
-          }
-        },
-      }
-    );
-    return response.data;
-  },
-
-  uploadProject: async (
-    roomId: string,
-    zipFile: File,
-    onProgress?: (progress: number) => void
-  ) => {
-    const formData = new FormData();
-    formData.append('zipFile', zipFile);
-
-    const response = await api.post(
-      `/rooms/${roomId}/upload-project`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        onUploadProgress: progressEvent => {
-          if (onProgress && progressEvent.total) {
-            const progress = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            onProgress(progress);
-          }
-        },
-      }
-    );
-
-    return response.data;
-  },
-
-  bulkOperations: async (
-    roomId: string,
-    operation: string,
-    fileIds: string[]
-  ) => {
-    const response = await api.post(`/rooms/${roomId}/bulk-operations`, {
-      operation,
-      fileIds,
-    });
-    return response.data;
-  },
-
-  downloadFile: async (fileId: string) => {
-    const response = await api.get(`/files/${fileId}/download`, {
-      responseType: 'blob',
-    });
-    return response.data;
-  },
-
-  getFileContent: async (fileId: string) => {
-    const response = await api.get(`/files/${fileId}/content`);
-    return response.data;
-  },
-
-  updateFileContent: async (fileId: string, content: string) => {
-    const response = await api.put(`/files/${fileId}/content`, { content });
-    return response.data;
-  },
-
-  deleteFile: async (roomId: string, fileId: string) => {
-    // Use batch delete endpoint for both files and folders
-    const response = await api.patch(`/rooms/${roomId}/files`, {
-      operation: 'delete',
-      fileIds: [fileId],
-    });
-    return response.data;
-  },
-
   getRoomFiles: async (roomId: string) => {
     const response = await api.get(`/rooms/${roomId}/files`);
     return response.data;
   },
 
-  createFile: async (roomId: string, name: string, parentId: string | null) => {
-    const response = await api.post(`/rooms/${roomId}/create-file`, {
-      name,
-      parentId,
-    });
+  getFileContent: async (roomId: string, fileId: string) => {
+    const response = await api.get(`/files/${fileId}/content`);
     return response.data;
   },
 
-  createFolder: async (
-    roomId: string,
-    name: string,
-    parentId: string | null
-  ) => {
-    const response = await api.post(`/rooms/${roomId}/create-folder`, {
-      name,
-      parentId,
-    });
-    return response.data;
-  },
+  // NOTE: The following file-related endpoints are not yet implemented in the backend.
+  // This section is kept as a placeholder for future development.
+  // moveFileOrFolder: async (...) => { ... },
+  // uploadFile: async (...) => { ... },
+  // uploadFolder: async (...) => { ... },
+  // uploadProject: async (...) => { ... },
+  // bulkOperations: async (...) => { ... },
+  // downloadFile: async (...) => { ... },
+  // updateFileContent: async (...) => { ... },
+  // deleteFile: async (...) => { ... },
+  // createFile: async (...) => { ... },
+  // createFolder: async (...) => { ... },
 };
 
 // Chat API
@@ -470,15 +295,15 @@ export const chatAPI = {
     return response.data;
   },
 
-  addReaction: async (messageId: string, emoji: string) => {
-    const response = await api.post(`/messages/${messageId}/reactions`, {
+  addReaction: async (roomId: string, messageId: string, emoji: string) => {
+    const response = await api.post(`/rooms/${roomId}/messages/${messageId}/reactions`, {
       emoji,
     });
     return response.data;
   },
 
-  removeReaction: async (messageId: string, emoji: string) => {
-    const response = await api.delete(`/messages/${messageId}/reactions`, {
+  removeReaction: async (roomId: string, messageId: string, emoji: string) => {
+    const response = await api.delete(`/rooms/${roomId}/messages/${messageId}/reactions`, {
       data: { emoji },
     });
     return response.data;

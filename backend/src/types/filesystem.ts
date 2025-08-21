@@ -1,4 +1,5 @@
-import { ObjectId } from "mongoose";
+import mongoose from "mongoose";
+type ObjectId = mongoose.Types.ObjectId;
 
 export interface FileInfo {
   fileId?: ObjectId; // For files only; null for folders
@@ -13,6 +14,8 @@ export interface FileInfo {
   createdAt?: Date;
   content?: string; // File content for reading
   path?: string; // Full file path
+  createdBy?: ObjectId;
+  lastModifiedBy?: ObjectId;
 }
 
 export interface DirectoryStructure {

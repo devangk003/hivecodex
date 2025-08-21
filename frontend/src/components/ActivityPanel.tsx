@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSocket } from '@/hooks/useSocket';
 import {
   Circle,
   UserPlus,
@@ -110,14 +111,16 @@ const UserAvatar: React.FC<{ participant: RoomParticipant; size?: number }> = ({
       >
         {participant.profilePicId ? (
           <img
-            src={`/api/files/${participant.profilePicId}`}
-            alt={participant.name}
+            src={`/api/v1/files/${participant.profilePicId}`}
+            alt={safeName}
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full bg-discord-primary flex items-center justify-center text-white font-medium">
-            {safeName.charAt(0).toUpperCase()}
-          </div>
+          <img
+            src={`https://ui-avatars.com/api/?name=${encodeURIComponent(safeName)}&background=5865f2&color=fff&size=${size}`}
+            alt={safeName}
+            className="w-full h-full object-cover"
+          />
         )}
       </div>
       {isOnline && (
@@ -131,17 +134,70 @@ const UserAvatar: React.FC<{ participant: RoomParticipant; size?: number }> = ({
 };
 
 export const ActivityPanel: React.FC<ActivityPanelProps> = ({
-  participants,
+  participants: initialParticipants,
   onClose,
   roomId,
 }) => {
   const { user } = useAuth();
-  const { status, isOnline, isAway, isOffline, setStatus } =
-    useUserStatus(roomId);
-
-  // Invite functionality state
+  const { status, isOnline, isAway, isOffline, setStatus } = useUserStatus(roomId);
+  const [participants, setParticipants] = useState<RoomParticipant[]>(initialParticipants);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const socket = useSocket();
+
+  // Real-time participant updates via socket
+  useEffect(() => {
+    if (!socket || !roomId) return;
+    socket.emit('joinRoom', { roomId, userId: user?.id, userName: user?.name });
+    const handleUsersUpdate = (updatedUsers: any[]) => {
+      // Map backend fields to frontend expected fields, ensure profilePicId is a string
+      const mapped = updatedUsers.map(u => ({
+        id: u.id || u.userId,
+        name: u.name || u.userName,
+        profilePicId: u.profilePicId,
+        status: u.status,
+        isOnline: u.isOnline !== undefined ? u.isOnline : (u.status === 'online' || u.status === 'in-room'),
+        currentRoomId: u.currentRoomId,
+      }));
+      // Deduplicate by id
+      const unique = Array.from(new Map(mapped.map(u => [u.id, u])).values());
+      setParticipants(unique);
+      if (socket) {
+        console.log('Socket connected:', socket.getConnectionStatus().isConnected);
+      }
+      console.log(unique);
+    };
+
+    // Refetch participants from backend (DB) for up-to-date status
+    const fetchParticipantsFromDB = async () => {
+      try {
+        // Get JWT token from localStorage or your auth context
+        const token = localStorage.getItem('token');
+        const res = await fetch(`/api/v1/rooms/${roomId}/users`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const users = await res.json();
+        // If backend returns { success, data }, use users.data; else fallback to users
+        const arr = Array.isArray(users) ? users : users.data;
+        if (!Array.isArray(arr)) throw new Error('Participants response is not an array');
+        handleUsersUpdate(arr);
+      } catch (e) {
+        console.warn('Failed to fetch participants from DB:', e);
+      }
+    };
+
+    socket.on('roomParticipants', handleUsersUpdate);
+    socket.on('statusChange', fetchParticipantsFromDB);
+
+    return () => {
+      socket.off('roomParticipants', handleUsersUpdate);
+      socket.off('statusChange', fetchParticipantsFromDB);
+      socket.emit('leave-room', { roomId });
+    };
+  }, [socket, roomId, user?.id, user?.name]);
 
   // Generate room invite link
   const roomInviteLink = `${window.location.origin}/room/${roomId}`;
@@ -168,27 +224,43 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
           url: roomInviteLink,
         });
       } catch (error) {
-        // User cancelled sharing or share failed
-        copyInviteLink(); // Fallback to copy
+        copyInviteLink();
       }
     } else {
-      copyInviteLink(); // Fallback for browsers without Web Share API
+      copyInviteLink();
     }
   };
 
+  // Ensure current user is included in the participants list
+  const selfParticipant: RoomParticipant | null = user
+    ? {
+        id: user.id,
+        name: user.name,
+        profilePicId: user.profilePicId,
+        status: isOffline ? 'offline' : isAway ? 'away' : 'in-room',
+        isOnline: !isOffline,
+        currentRoomId: roomId,
+      }
+    : null;
+
+  const allParticipants: RoomParticipant[] = React.useMemo(() => {
+    const map = new Map<string, RoomParticipant>();
+    for (const p of participants) map.set(p.id, p);
+    if (selfParticipant && !map.has(selfParticipant.id)) {
+      map.set(selfParticipant.id, selfParticipant);
+    }
+    return Array.from(map.values());
+  }, [participants, selfParticipant]);
+
   // Separate participants by status
-  const onlineParticipants = participants.filter(
-    p => p.isOnline && (p.status === 'online' || p.status === 'in-room')
+  const onlineAndAwayParticipants = allParticipants.filter(
+    p => p.isOnline && (p.status === 'online' || p.status === 'in-room' || p.status === 'away')
   );
-  const awayParticipants = participants.filter(
-    p => p.isOnline && p.status === 'away'
-  );
-  const offlineParticipants = participants.filter(
+  const offlineParticipants = allParticipants.filter(
     p => !p.isOnline || p.status === 'offline'
   );
 
-  const totalOnline = onlineParticipants.length + awayParticipants.length;
-  const totalParticipants = participants.length;
+  const totalParticipants = allParticipants.length;
 
   const handleStatusChange = (newStatus: UserStatus) => {
     console.log('ActivityPanel - handleStatusChange called with:', newStatus);
@@ -241,15 +313,13 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
             >
               {participant.name}
             </span>
-            {isEditing && (
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse shadow-lg shadow-green-400/50" />
-                <span className="text-xs text-green-400">
-                  Editing {editingFile ? editingFile[0] : 'file'}
-                </span>
-              </div>
-            )}
           </div>
+          {isEditing && (
+            <div className="mt-0.5 flex items-center gap-1">
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-lg shadow-green-400/40" />
+              <span className="text-[11px] text-muted-foreground">editing</span>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -257,23 +327,6 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
 
   return (
     <div className="w-full bg-discord-activity border-l border-border flex flex-col h-full">
-      <div className="p-4 border-b border-border flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">
-            Participants ({totalOnline} Online, {awayParticipants.length} Away, {offlineParticipants.length} Offline)
-          </h2>
-          {onClose && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-discord-sidebar-hover"
-              onClick={onClose}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </div>
 
       <ScrollArea className="flex-1 custom-scrollbar">
         <div className="p-4">
@@ -288,20 +341,14 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Online participants */}
-              {totalOnline > 0 && (
+              {/* Online and Away participants */}
+              {onlineAndAwayParticipants.length > 0 && (
                 <div>
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">
-                    Online — {totalOnline}
+                    Online
                   </h3>
                   <div className="space-y-2">
-                    {onlineParticipants.map(participant => (
-                      <MemberItem
-                        key={participant.id}
-                        participant={participant}
-                      />
-                    ))}
-                    {awayParticipants.map(participant => (
+                    {onlineAndAwayParticipants.map(participant => (
                       <MemberItem
                         key={participant.id}
                         participant={participant}
@@ -315,7 +362,7 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
               {offlineParticipants.length > 0 && (
                 <div>
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">
-                    Offline — {offlineParticipants.length}
+                    Offline
                   </h3>
                   <div className="space-y-2">
                     {offlineParticipants.map(participant => (
